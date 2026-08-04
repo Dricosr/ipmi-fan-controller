@@ -68,7 +68,7 @@ O que **funcionou** (via engenharia reversa):
 |--------|------------|---------|
 | **Linguagem** | **Node.js 24 LTS** | `spawn` passa args como array (sem o bug do PowerShell); zero deps |
 | **Leitura de temperatura** | `nvidia-smi` (execFile) | Já vem com o driver NVIDIA |
-| **Controle das fans** | `IPMICFG-Win.exe` **1.27.1** via `-raw 0x3a ...` | Única forma de acessar o BMC ASRock |
+| **Controle das fans** | `IPMICFG-Win.exe` **1.27.1** via `-raw 0x3a ...` ([download](https://www.supermicro.com/wdl/utility/IPMICFG/Previous%20Releases/)) | Única forma de acessar o BMC ASRock |
 | **Inicialização no logon** | **Task Scheduler** + `run_hidden.vbs` | Roda oculto a cada logon |
 | **Log/verificação** | `fs.appendFileSync` + readback do BMC | Garante que o duty foi aplicado (PASS/FAIL) |
 | **Configuração** | `config.json` | Curva, fan, intervalo — tudo editável |
@@ -134,6 +134,8 @@ ipmicfg/app
 ## 🚀 Começando
 
 **Requisitos:** Node.js 24+ · IPMICFG 1.27.1 · driver NVIDIA com `nvidia-smi` · admin
+
+> 📥 **IPMICFG** (use a versão **1.27.1**): https://www.supermicro.com/wdl/utility/IPMICFG/Previous%20Releases/
 
 ```bat
 :: 1. Validar o acesso ao IPMI (1.27.1 na pasta própria)
