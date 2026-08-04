@@ -1,0 +1,28 @@
+{
+  "fan": {
+    "position": 5,
+    "name": "FRNT_FAN1"
+  },
+  "ipmi": {
+    "dir": "C:\\Program Files\\ipmicfg\\ipmi_1.27.1\\Windows\\64bit"
+  },
+  "behavior": {
+    "interval": 5,
+    "minSpeed": 20,
+    "gpuFailSafe": "auto",
+    "gpuFailSafeTries": 3,
+    "otherFansMode": "auto",
+    "otherFansFloor": 40
+  },
+  "tempCurve": {
+    "30": 25,
+    "40": 40,
+    "50": 60,
+    "60": 80,
+    "65": 100
+  },
+  "log": {
+    "dir": "logs",
+    "file": "fan_controller.log"
+  }
+}

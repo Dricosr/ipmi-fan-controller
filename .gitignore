@@ -1,0 +1,17 @@
+# Logs do app
+logs/
+*.log
+
+# Lock de instância única
+*.lock
+
+# Arquivos temporários / experimentos
+*.tmp
+exp*.js
+
+# Sistema/OS
+Thumbs.db
+Desktop.ini
+
+# Binários do IPMICFG (licenciados pela Supermicro — não versionar)
+ipmi_*/
