@@ -1,7 +1,8 @@
 # 🌀 IPMI Fan Controller — Tesla P100
 
-> Controle automático de ventoinha da **NVIDIA Tesla P100** pela temperatura da GPU, via **IPMI raw**
-> em um servidor **ASRock EP2C602** (dual Xeon E5-2670 v2). Feito em **Node.js**, sem dependências.
+> Controle automático da **ventoinha adaptada (HA 8020 H1 2SBZ, 12 V PWM)** da **NVIDIA Tesla P100**
+> pela temperatura da GPU, via **IPMI raw** em um servidor **ASRock EP2C602** (dual Xeon E5-2670 v2).
+> Feito em **Node.js**, sem dependências.
 
 ![Node](https://img.shields.io/badge/Node.js-24.19.0-339933?logo=nodedotjs)
 ![Platform](https://img.shields.io/badge/Windows-10%2F11-0078D6?logo=windows)
@@ -12,15 +13,25 @@
 
 ## 🎯 Motivação
 
-A Tesla P100 (250 W) em servidor 1U tem uma ventoinha que parece um **motor de jato**. O problema:
+A **NVIDIA Tesla P100** (250 W) **não tem ventoinha de fábrica** — ela é refrigerada de forma
+**passiva**, contando com o fluxo de ar do gabinete. Para funcionar no nosso servidor, precisávamos
+de **resfriamento ativo**.
 
-- A placa **ASRock EP2C602** usa BMC **ASPEED AST2300**, cujo **controle de ventoinhas NÃO existe na
-  interface web** do BMC.
-- No modo automático, o BMC decide a velocidade sozinho — e não deixa você ajustar.
-- O ruído é insuportável em idle, e você quer garantir **100% de resfriamento** antes de a GPU esquentar.
+A solução foi **adaptar uma ventoinha** no cooler da GPU: uma **HA 8020 H1 2SBZ** — 80 mm, **12 V**,
+com controle **PWM** — ligada em uma porta de fan da placa-mãe. Mas aí começou o problema:
 
-A solução: **assumir o controle do BMC via comandos IPMI raw**, ler a temperatura da GPU com o
-`nvidia-smi` e pilotar a ventoinha por uma curva de temperatura. **Automático, discreto e no boot.**
+- A placa **ASRock EP2C602** (dual Xeon E5-2670 v2, BMC ASPEED AST2300) **não controla a velocidade
+  da fan da P100 pelos recursos nativos da BIOS**.
+- Também **não conseguimos** controlar com o **Fan Control** e outros equivalentes.
+- A única alternativa nativa era deixar a fan da porta usada pela P100 em **100% fixo na BIOS** —
+  funcionava, mas com **ruído e desgaste desnecessários** quando a GPU está ociosa.
+- E o principal: a placa-mãe **não lê a temperatura da GPU** — não havia como automatizar por ali.
+
+A solução que construímos: um programa que usa o **`nvidia-smi`** para ler o **sensor de temperatura
+da Tesla P100** e, com base nele, **controla a velocidade da fan adaptada** via **IPMI raw** no BMC.
+
+> **Resultado:** a ventoinha só acelera quando a P100 esquenta e desacelera quando esfria — silenciosa
+> em idle, **100% de resfriamento** quando a GPU pede, rodando sozinha em background desde o logon.
 
 ---
 
@@ -30,6 +41,8 @@ Nenhum dos caminhos "fáceis" funcionou:
 
 | Tentativa | Resultado |
 |-----------|-----------|
+| Velocidade da fan via **BIOS nativa** | ❌ Não controla a fan da P100 |
+| **Fan Control** e outros equivalentes | ❌ Não conseguem controlar |
 | Controlar fan pela **interface web do BMC** | ❌ Não existe essa opção |
 | IPMICFG **1.38.0** (a mais nova) | ❌ `Can not find a valid IPMI device` |
 | Comandos **NetFn `0x30`** (padrão Supermicro) | ❌ `C1h` (comando inválido) |
@@ -155,7 +168,7 @@ node fan_controller.js --diag        :: diagnóstico (saída crua)
   "tempCurve": { "30": 25, "40": 40, "50": 60, "60": 80, "65": 100 }
 }
 ```
-A fan **pos 5 = FRNT_FAN1** é a ventoinha da Tesla P100.
+A fan **pos 5 = FRNT_FAN1** é a porta onde a **ventoinha adaptada da Tesla P100 (HA 8020 H1 2SBZ)** está ligada.
 
 ---
 
