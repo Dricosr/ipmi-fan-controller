@@ -152,10 +152,11 @@ FRNT_FAN1 setado 80% -> duty=50 [PASS]
     "minSpeed": 20,
     "gpuFailSafe": "auto",
     "gpuFailSafeTries": 3,
+    "applyToAll": true,
     "otherFansMode": "auto",
     "otherFansFloor": 40
   },
-  "tempCurve": { "30": 20, "40": 30, "50": 50, "60": 70, "70": 90, "80": 100 },
+  "tempCurve": { "30": 25, "40": 40, "50": 60, "60": 80, "65": 100 },
   "log": { "dir": "logs", "file": "fan_controller.log" }
 }
 ```
@@ -169,7 +170,8 @@ FRNT_FAN1 setado 80% -> duty=50 [PASS]
 | `behavior.minSpeed` | Velocidade mínima da curva (abaixo do 1º ponto) | `20` |
 | `behavior.gpuFailSafe` | Ação se a GPU falhar repetidamente (`auto` = restaura auto) | `"auto"` |
 | `behavior.gpuFailSafeTries` | Nº de falhas seguidas antes do fail-safe | `3` |
-| `behavior.otherFansMode` | Demais fans: `auto` (duty 0x00, **seguro — validado**) ou `floor` (piso) | `"auto"` |
+| `behavior.applyToAll` | Aplica a curva em **todas** as slots (a fan da P100 só acelera se TODAS as slots têm duty ≠ 0x00 — quirk do BMC) | `true` |
+| `behavior.otherFansMode` | Usado só se `applyToAll=false`: demais fans em `auto` (0x00) ou `floor` (piso) | `"auto"` |
 | `behavior.otherFansFloor` | % mínimo das demais fans quando `otherFansMode=floor` | `40` |
 | `tempCurve` | Mapa `temperatura → velocidade (%)` | ver acima |
 | `log.dir` / `log.file` | Caminho do log | `logs` / `fan_controller.log` |
@@ -248,6 +250,7 @@ Saída final: `=== VALIDACAO OK (sem falhas) ===`.
 | `C1h` com `-fan` | Comando `-fan` não é suportado na ASRock | Usar apenas os `-raw 0x3a` (o app já faz isso) |
 | Fan não muda de velocidade | Fan não detectada (sem RPM) ou porta errada | Ver `list`; conferir se a fan está ligada no header certo |
 | `GPU indisponivel` no log | `nvidia-smi` sem resposta | Verificar driver/GPU; após 3 falhas o app restaura auto |
+| Fan não sobe (~1800 RPM) mesmo com duty alto | **Quirk do BMC:** com `0x00` nas outras slots a fan da P100 fica no mínimo | Manter `behavior.applyToAll: true` (default) |
 | Modo ficou manual após morte do daemon | Processo morto à força (sem `stop.bat`) | Rodar `stop.bat` ou `node fan_controller.js --once` (restaura auto) |
 | Argumamentos corrompidos no PowerShell | PowerShell altera a formatação | Não digitar os `-raw` manualmente no PowerShell; usar o app/`.bat` |
 
@@ -275,8 +278,9 @@ O BMC expõe **7 slots de duty** (+ 1 byte de modo) pelo comando `0x3a`:
 
 ## 14. Notas de Segurança
 
-- Com duty `0x00` nas demais fans, o BMC **mantém elas girando** (validado) → `otherFansMode: "auto"`
-  é seguro. Se algum dia trocar de placa/BMC, revalide com `test_fan.bat`.
+- ⚠️ **Quirk do BMC:** com duty `0x00` nas outras slots, a fan da P100 **fica travada no mínimo**
+  (~1800 RPM) mesmo com duty 100% nela. Por isso o app usa `behavior.applyToAll: true` (default) —
+  aplica a curva em todas as slots. Só desative se validar o contrário em outro hardware.
 - O modo manual é **global**: ao controlar a fan escolhida, as demais entram em manual no BMC.
 - Se o daemon for morto à força, o BMC fica em manual até o **reboot** ou próximo logon.
   Use `stop.bat` para parar de forma limpa.

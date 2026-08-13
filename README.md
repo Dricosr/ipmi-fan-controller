@@ -166,10 +166,21 @@ node fan_controller.js --diag        :: diagnóstico (saída crua)
 {
   "fan": { "position": 5, "name": "FRNT_FAN1" },
   "ipmi": { "dir": "C:\\Program Files\\ipmicfg\\ipmi_1.27.1\\Windows\\64bit" },
-  "behavior": { "interval": 5, "otherFansMode": "auto", "otherFansFloor": 40 },
+  "behavior": {
+    "interval": 5,
+    "applyToAll": true,
+    "otherFansMode": "auto",
+    "otherFansFloor": 40
+  },
   "tempCurve": { "30": 25, "40": 40, "50": 60, "60": 80, "65": 100 }
 }
 ```
+
+> ⚠️ **Quirk do BMC (importante):** a fan da P100 **só acelera quando TODAS as slots recebem duty**.
+> Com `0x00` nas demais slots ela fica travada no mínimo (~1800 RPM), mesmo com duty 100% nela.
+> Por isso `behavior.applyToAll: true` (default) aplica a curva em **todas** as slots — é o que faz a
+> fan física responder de verdade. Se desligar, `otherFansMode`/`otherFansFloor` voltam a valer.
+
 A fan **pos 5 = FRNT_FAN1** é a porta onde a **ventoinha adaptada da Tesla P100 (HA 8020 H1 2SBZ)** está ligada.
 
 ---

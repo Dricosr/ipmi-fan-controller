@@ -11,6 +11,7 @@
     "minSpeed": 20,
     "gpuFailSafe": "auto",
     "gpuFailSafeTries": 3,
+    "applyToAll": true,
     "otherFansMode": "auto",
     "otherFansFloor": 40
   },

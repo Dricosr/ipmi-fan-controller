@@ -163,14 +163,27 @@ function speedForTemp(temp) {
   return speed;
 }
 
-// Aplica a velocidade alvo na fan selecionada (outras conforme otherFansMode)
+// Constrói o array de 7 duties.
+// applyToAll=true (default nesta placa): a fan da P100 SÓ responde quando TODAS as slots
+// recebem duty (duty 0x00 nas outras = fan fica no mínimo). Logo, aplica a mesma % em todas.
+function buildDuties(pct, fanPos) {
+  const pos = fanPos || selectedFan;
+  const duties = new Array(FAN_SLOTS).fill(0);
+  if (config.behavior.applyToAll !== false) {
+    duties.fill(pct);
+  } else {
+    if ((config.behavior.otherFansMode || 'auto') === 'floor') {
+      duties.fill(config.behavior.otherFansFloor || 40);
+    }
+    if (pos <= FAN_SLOTS) duties[pos - 1] = pct;
+  }
+  return duties;
+}
+
+// Aplica a velocidade alvo (por padrão em todas as slots — ver buildDuties)
 async function applySpeed(targetPct) {
   if (selectedFan > FAN_SLOTS) return { ok: false, reason: 'posicao ' + selectedFan + ' nao controlavel' };
-  const duties = new Array(FAN_SLOTS).fill(0);
-  if ((config.behavior.otherFansMode || 'auto') === 'floor') {
-    duties.fill(config.behavior.otherFansFloor || 40);
-  }
-  duties[selectedFan - 1] = targetPct;
+  const duties = buildDuties(targetPct);
   const r = await setFans(duties);
   if (r.code !== 0) return { ok: false, reason: 'set falhou: ' + (r.err || r.out).trim() };
   const st = await readFanStatus();
@@ -245,10 +258,8 @@ async function cmdValidate() {
   console.log('   read: ' + st.raw);
   console.log('   esperado byte[1..] ~= 28 (40%)');
 
-  log('-- 5. PER-FAN: fan escolhida=' + selectedFan + ' (' + FAN_NAMES[selectedFan-1] + ') a 60%, demais 0x00 --');
-  console.log('   >>> Verificar RPM das demais fans: se seguirem girando, otherFansMode=auto e SEGURO.');
-  const duties = new Array(FAN_SLOTS).fill(0);
-  if (selectedFan <= FAN_SLOTS) duties[selectedFan - 1] = 60;
+  log('-- 5. PER-FAN: fan escolhida=' + selectedFan + ' (' + FAN_NAMES[selectedFan-1] + ') a 60% (applyToAll=' + (config.behavior.applyToAll !== false) + ') --');
+  const duties = buildDuties(60);
   const rp = await setFans(duties);
   await sleep(800);
   const stP = await readFanStatus();
@@ -261,8 +272,7 @@ async function cmdValidate() {
 
   log('-- 6. Ramp 20/50/80/100 na fan escolhida --');
   for (const pct of [20, 50, 80, 100, 50, 20]) {
-    const d = new Array(FAN_SLOTS).fill(0);
-    if (selectedFan <= FAN_SLOTS) d[selectedFan - 1] = pct;
+    const d = buildDuties(pct);
     await setFans(d);
     await sleep(600);
     const s = await readFanStatus();
@@ -308,9 +318,7 @@ async function cmdTestFan(n) {
   try {
     await setAuto(); await sleep(400);
     for (const pct of [20, 50, 80, 100, 80, 50, 20]) {
-      const d = new Array(FAN_SLOTS).fill(0);
-      if ((config.behavior.otherFansMode || 'auto') === 'floor') d.fill(config.behavior.otherFansFloor || 40);
-      d[n - 1] = pct;
+      const d = buildDuties(pct, n);
       await setFans(d);
       await sleep(700);
       const s = await readFanStatus();
@@ -332,9 +340,7 @@ async function cmdSetFan(n, pct) {
   if (n < 1 || n > FAN_SLOTS) return console.log('Posicao invalida (1-' + FAN_SLOTS + '). Pos 8 (FRNT_FAN4) nao e controlavel.');
   pct = Math.max(0, Math.min(100, Math.round(pct)));
   manualPaused = true;
-  const d = new Array(FAN_SLOTS).fill(0);
-  if ((config.behavior.otherFansMode || 'auto') === 'floor') d.fill(config.behavior.otherFansFloor || 40);
-  d[n - 1] = pct;
+  const d = buildDuties(pct, n);
   await setFans(d);
   await sleep(600);
   const s = await readFanStatus();
