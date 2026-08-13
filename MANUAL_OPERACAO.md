@@ -1,22 +1,24 @@
 # 📖 Manual de Operação — IPMI Fan Controller (Tesla P100)
 
-Controle automático da ventoinha da Tesla P100 (e demais fans) pela temperatura da GPU,
-via comandos IPMI raw do IPMICFG (versão **1.27.1**), rodando em **Node.js**.
+Controle **total das fans** (GPU + CPU + MB) por temperatura, com leitura via **web da BMC** +
+controle via **IPMICFG raw**, rodando em **Node.js** com **web UI** local em `http://127.0.0.1:3041`.
 
-> **Status:** validado em 04/08/2026 na placa ASRock EP2C602 (dual Xeon + Tesla P100).
-> Validação completa OK: leitura, modo manual/auto, ramp de velocidades e listagem de fans.
+> **Status:** operacional — validado na placa ASRock EP2C602 (dual Xeon E5-2670 v2 + Tesla P100).
 
 ---
 
 ## 1. Visão Geral
 
-O app roda em loop, lê a temperatura da GPU (`nvidia-smi`), calcula a velocidade alvo pela
-curva de temperatura e aplica o duty na fan escolhida via `IPMICFG-Win.exe -raw 0x3a ...`.
-A cada mudança de velocidade ele faz **readback** (lê de volta do BMC) e registra `PASS`/`FAIL`
-no log — garantindo que o comando realmente foi aplicado.
+O app (`controller.js`) é um **processo único** que:
+1. Lê os sensores via **HTTP da web da BMC** (`/rpc/getallsensors.asp`, ~100-300ms) + GPU local (`nvidia-smi`).
+2. Calcula a duty de cada fan pela **curva** do sensor mapeado (`fanMapping`).
+3. Aplica as 7 duties via `IPMICFG-Win.exe -raw 0x3a ...` (piso `globalMin=20%`).
+4. Serve a **web UI** (Dashboard, Mapping, Curvas, Configuração) e o **teste de fan** por porta.
 
 ```
-GPU (nvidia-smi) → curva → velocidade alvo → BMC (IPMI raw) → readback → log
+web BMC (getallsensors) + nvidia-smi ─▶ sensores ─▶ curvas ─▶ duties ─▶ IPMICFG 0x3a ─▶ fans
+                                                    ▲                                   │
+                                                    └──────────── web UI :3041 ◀────────┘
 ```
 
 **Localização:** `C:\Program Files\ipmicfg\app`
@@ -27,10 +29,11 @@ GPU (nvidia-smi) → curva → velocidade alvo → BMC (IPMI raw) → readback �
 
 | Item | Onde | Observação |
 |------|------|------------|
-| Node.js LTS | `C:\Program Files\nodejs\node.exe` | Instalado via winget (v24.19.0) |
-| IPMICFG 1.27.1 | `C:\Program Files\ipmicfg\ipmi_1.27.1\Windows\64bit` | **1.38.0 não funciona** (não acha o BMC) |
+| Node.js LTS | `C:\Program Files\nodejs\node.exe` | v24.19.0 |
+| IPMICFG 1.27.1 | `C:\Program Files\ipmicfg\ipmi_1.27.1\Windows\64bit` | **1.38.0 não funciona** |
 | nvidia-smi | `C:\Windows\System32\nvidia-smi.exe` | Driver NVIDIA DCH |
-| Permissão admin | — | Necessária p/ gravar em `Program Files` e agendar tarefa |
+| Acesso web à BMC | `http://<endereco-bmc>` (ex.: 192.168.18.200) | Login admin |
+| Permissão admin | — | Para gravar em `Program Files` e agendar tarefa |
 
 ---
 
@@ -38,14 +41,15 @@ GPU (nvidia-smi) → curva → velocidade alvo → BMC (IPMI raw) → readback �
 
 | Arquivo | Função |
 |---------|--------|
-| `fan_controller.js` | App principal (Node, sem dependências externas) |
-| `config.json` | Configuração (fan, curva, intervalo, piso) |
-| `run_visible.bat` | Inicia em modo **interativo** (janela, p/ testes) |
-| `run_hidden.vbs` | Inicia em modo **daemon oculto** (usado no logon) |
+| `controller.js` | App único (leitura + controle + web UI) |
+| `config.json` | Configuração (BMC, intervalo, curvas, fanMapping, fanNames) |
+| `public/` | Web UI (HTML/JS/CSS): dashboard, mapping, curvas, configuração |
+| `run_visible.bat` | Inicia o app em janela visível (debug) |
+| `run_hidden.vbs` | Inicia oculto (usado no logon) |
 | `setup_task.bat` | Registra a tarefa no logon (Task Scheduler) |
 | `remove_task.bat` | Remove a tarefa do logon |
-| `stop.bat` | Para o daemon e restaura o modo automático |
-| `test_fan.bat` | Roda a validação completa do IPMI |
+| `stop.bat` | Para o app e restaura o modo automático do BMC |
+| `test_fan.bat` | Testa a conexão do app (web BMC + sensores) |
 | `README.md` | Resumo rápido |
 | `logs\fan_controller.log` | Log do app (criado automaticamente) |
 
@@ -53,23 +57,15 @@ GPU (nvidia-smi) → curva → velocidade alvo → BMC (IPMI raw) → readback �
 
 ## 4. Configuração Inicial (1ª vez)
 
-1. **Verificar o IPMI** (só a 1.27.1 acessa o BMC):
+1. **Editar `config.json`** — principalmente `bmc.address` / `bmc.user` / `bmc.password`
+   (a leitura de sensores é via HTTP da web da BMC) e o `sensor.interval`.
+2. **Iniciar o app**:
    ```bat
-   cd /d "C:\Program Files\ipmicfg\ipmi_1.27.1\Windows\64bit"
-   IPMICFG-Win.exe -raw 0x3a 0x02
+   run_visible.bat
    ```
-   Deve retornar 8 bytes (ex.: `01 00 00 00 00 00 00 00`). Erro `Can not find a valid IPMI device`
-   = rodou fora da pasta certa (o app sempre roda com a pasta correta).
-
-2. **Editar `config.json`** conforme necessário (ver seção 7).
-
-3. **Validar** o acesso e o comportamento:
-   ```bat
-   test_fan.bat
-   ```
-   (equivale a `node fan_controller.js --validate`)
-
-4. **Registrar no logon** (para iniciar oculto a cada login):
+3. **Abrir a web UI**: `http://127.0.0.1:3041` → aba **Configuração** → **Testar conexão**
+   (deve mostrar GPU + CPU/MB).
+4. **Registrar no logon** (iniciar oculto a cada login):
    ```bat
    setup_task.bat
    ```
@@ -78,66 +74,46 @@ GPU (nvidia-smi) → curva → velocidade alvo → BMC (IPMI raw) → readback �
 
 ## 5. Como Executar
 
-### Modo interativo (console visível — recomendado p/ testes)
+### Janela visível (debug/testes)
 ```bat
 run_visible.bat
 ```
-ou diretamente:
+ou:
 ```
 cd /d "C:\Program Files\ipmicfg\app"
-"C:\Program Files\nodejs\node.exe" fan_controller.js
+"C:\Program Files\nodejs\node.exe" controller.js
 ```
 
-### Modo daemon oculto (produção — inicia no logon)
-O `setup_task.bat` registra a tarefa `IPMI-FanController` que roda no **logon**, oculta,
-via `run_hidden.vbs` (executa `node fan_controller.js --daemon`).
+### Oculto (produção — inicia no logon)
+O `setup_task.bat` registra a tarefa `IPMI-FanController` (dispara no **logon**) que executa
+`run_hidden.vbs` → `node controller.js` oculto.
 
-Para executar uma vez sem esperar o logon (teste do startup):
+Para iniciar agora sem esperar o logon:
 ```bat
 schtasks /run /tn "IPMI-FanController"
 ```
 
-### Execuções pontuais
-| Comando | Efeito |
-|---------|--------|
-| `node fan_controller.js --once` | Roda 1 ciclo (temp→curva→set→readback) e restaura auto |
-| `node fan_controller.js --validate` | Validação completa do IPMI |
-| `node fan_controller.js --diag` | Diagnóstico (saída crua dos comandos) |
-
 ---
 
-## 6. Comandos do Modo Interativo
+## 6. Web UI e API
 
-Ao rodar em modo interativo, aparece o prompt `>`. Comandos (case-insensitive):
+Abra **http://127.0.0.1:3041**:
 
-| Comando | Descrição | Exemplo |
-|---------|-----------|---------|
-| `list` / `fans` | Lista todas as fans (pos, nome, RPM, detectada, selecionada) | `list` |
-| `select <n>` | Escolhe a fan do modo automático (**salva no config**) | `select 5` |
-| `testar fan <n>` | Testa a fan: ramp 20→50→80→100→80→50→20 com readback, **restaura auto no final** | `testar fan 5` |
-| `teste a fan <n>` | Idem (variação da digitação) | `teste a fan 5` |
-| `set fan <n> <pct>` | Seta a fan n em `pct`% (manual; o loop fica pausado até `auto`) | `set fan 5 80` |
-| `set fan <n>` | Seta a fan n em **50%** (padrão) | `set fan 5` |
-| `auto` | Restaura o modo automático do BMC e retoma o loop | `auto` |
-| `status` | Mostra temp da GPU, modo IPMI, fan selecionada e duty de todas | `status` |
-| `help` | Mostra a lista de comandos | `help` |
-| `exit` / `sair` | Encerra restaurando o modo automático | `exit` |
+| Página | Função |
+|--------|--------|
+| **Dashboard** | Temperaturas (GPU/CPU/MB) com fan atrelada e duty, tabela de fans (RPM/duty), voltagens, todos os sensores |
+| **Mapping** | Porta → sensor + curva, prévia ao vivo (% calculada) e botão **Test** por fan |
+| **Curvas** | Edita as curvas **CPU** e **GPU** (pontos temperatura → %) |
+| **Configuração** | Endereço/usuário/senha da BMC, intervalo de leitura, testar conexão |
 
-Exemplo de sessão:
-```
-> list
-> select 5
-Fan selecionada: 5 (FRNT_FAN1) - salva no config
-> testar fan 5
-   FRNT_FAN1 20% -> duty=14 [PASS]
-   FRNT_FAN1 50% -> duty=32 [PASS]
-   ...
-> set fan 5 80
-FRNT_FAN1 setado 80% -> duty=50 [PASS]
-> auto
-> status
-> exit
-```
+### Endpoints da API
+| Endpoint | Descrição |
+|----------|-----------|
+| `GET /api/state` | Sensores, duties, fanMapping, teste ativo |
+| `GET /api/config` | Configuração atual (senha mascarada, curvas, mapping) |
+| `PUT /api/config` | Salva configuração (aplica na hora) |
+| `GET /api/test` | Testa conexão (GPU + CPU/MB via web BMC) |
+| `POST /api/fan/<slot>/test` | Acelera a fan do slot a 100% por `testDurationSec` e volta |
 
 ---
 
@@ -145,62 +121,70 @@ FRNT_FAN1 setado 80% -> duty=50 [PASS]
 
 ```json
 {
-  "fan": { "position": 5, "name": "FRNT_FAN1" },
+  "server": { "host": "127.0.0.1", "port": 3041 },
+  "bmc": { "address": "192.168.18.200", "user": "admin", "password": "admin" },
+  "sensor": { "interval": 3 },
+  "fanNames": ["CPU_FAN1","REAR_FAN1","REAR_FAN2","FRNT_FAN1","FRNT_FAN2","FRNT_FAN3","FRNT_FAN4","CPU_FAN2"],
   "ipmi": { "dir": "C:\\Program Files\\ipmicfg\\ipmi_1.27.1\\Windows\\64bit" },
-  "behavior": {
-    "interval": 5,
-    "minSpeed": 20,
-    "gpuFailSafe": "auto",
-    "gpuFailSafeTries": 3,
-    "applyToAll": true,
-    "otherFansMode": "auto",
-    "otherFansFloor": 40
+  "behavior": { "interval": 5, "globalMin": 20, "testDurationSec": 10 },
+  "curves": {
+    "cpu": { "30": 0, "40": 10, "50": 25, "60": 70, "65": 100 },
+    "gpu": { "30": 25, "40": 40, "50": 60, "60": 80, "65": 100 }
   },
-  "tempCurve": { "30": 25, "40": 40, "50": 60, "60": 80, "65": 100 },
+  "fanMapping": {
+    "1": { "sensor": "cpu_bsp1", "curve": "cpu" },
+    "2": { "sensor": "mb", "curve": "cpu" },
+    "3": { "sensor": "mb", "curve": "cpu" },
+    "4": { "sensor": "gpu", "curve": "gpu" },
+    "5": { "sensor": "mb", "curve": "cpu" },
+    "6": { "sensor": "mb", "curve": "gpu" },
+    "7": { "sensor": "mb", "curve": "cpu" }
+  },
   "log": { "dir": "logs", "file": "fan_controller.log" }
 }
 ```
 
 | Chave | Descrição | Default |
 |-------|-----------|---------|
-| `fan.position` | Porta da fan controlada (1–7). `5` = FRNT_FAN1 (Tesla P100) | `5` |
-| `fan.name` | Nome descritivo (só p/ log/display) | `"FRNT_FAN1"` |
-| `ipmi.dir` | Pasta do IPMICFG (1.27.1) | `...\ipmi_1.27.1\Windows\64bit` |
-| `behavior.interval` | Segundos entre verificações de temperatura | `5` |
-| `behavior.minSpeed` | Velocidade mínima da curva (abaixo do 1º ponto) | `20` |
-| `behavior.gpuFailSafe` | Ação se a GPU falhar repetidamente (`auto` = restaura auto) | `"auto"` |
-| `behavior.gpuFailSafeTries` | Nº de falhas seguidas antes do fail-safe | `3` |
-| `behavior.applyToAll` | Aplica a curva em **todas** as slots (a fan da P100 só acelera se TODAS as slots têm duty ≠ 0x00 — quirk do BMC) | `true` |
-| `behavior.otherFansMode` | Usado só se `applyToAll=false`: demais fans em `auto` (0x00) ou `floor` (piso) | `"auto"` |
-| `behavior.otherFansFloor` | % mínimo das demais fans quando `otherFansMode=floor` | `40` |
-| `tempCurve` | Mapa `temperatura → velocidade (%)` | ver acima |
+| `server.host` / `server.port` | Onde a web UI escuta | `127.0.0.1` / `3041` |
+| `bmc.address` | Endereço da BMC (web HTTP) — **obrigatório** p/ leitura | — |
+| `bmc.user` / `bmc.password` | Credenciais da web da BMC | `admin` / `admin` |
+| `sensor.interval` | Segundos entre leituras/atualizações (1–60) | `3` |
+| `fanNames` | Nomes **físicos** (silkscreen) das 8 portas | ver acima |
+| `ipmi.dir` | Pasta do IPMICFG 1.27.1 | `...\ipmi_1.27.1\Windows\64bit` |
+| `behavior.globalMin` | Duty mínima (nunca `0x00` — quirk do BMC) | `20` |
+| `behavior.testDurationSec` | Duração do teste de fan (segundos) | `10` |
+| `curves.cpu` / `curves.gpu` | Curvas temperatura → velocidade (%) | ver acima |
+| `fanMapping` | Porta → `{ sensor, curve }` (portas 1–7) | ver acima |
 | `log.dir` / `log.file` | Caminho do log | `logs` / `fan_controller.log` |
+
+> ⚠️ **Quirk do BMC:** a fan da P100 **só acelera quando TODAS as slots recebem duty** (com `0x00`
+> nas demais ela trava no mínimo). Por isso `globalMin: 20` — o app **nunca** envia `0x00`.
 
 ---
 
-## 8. Curva de Temperatura
+## 8. Curvas de Temperatura
 
-A curva atual (100% a 65 °C):
-| Temperatura | Velocidade |
-|-------------|------------|
-| < 30 °C | 20 % (mínimo) |
-| 30–39 °C | 25 % |
-| 40–49 °C | 40 % |
-| 50–59 °C | 60 % |
-| 60–64 °C | 80 % |
-| **≥ 65 °C** | **100 %** |
+Curvas atuais (100% a 65 °C):
+| Temperatura | CPU | GPU |
+|-------------|-----|-----|
+| < 30 °C | 0 % (piso 20%) | 25 % |
+| 30–39 °C | 10 % (piso 20%) | 40 % |
+| 40–49 °C | 25 % | 60 % |
+| 50–59 °C | 70 % | 80 % |
+| **≥ 60–65 °C** | **100 %** | **100 %** |
 
-Para ajustar, edite `tempCurve` no `config.json`. O app usa o **maior ponto** cuja temperatura
-é menor ou igual à lida.
+> Toda duty calculada é limitada ao piso `globalMin` (20%). Edite na aba **Curvas** da web UI
+> (ou em `config.json`). O app usa o **maior ponto** cuja temperatura é ≤ à lida.
 
 ---
 
 ## 9. Operação em Produção
 
-1. Configure `config.json` (fan, curva, intervalo).
-2. Valide com `test_fan.bat`.
+1. Configure `config.json` (BMC, intervalo, curvas, mapping).
+2. Inicie e valide: `run_visible.bat` + aba **Configuração** → **Testar conexão**.
 3. Registre no logon: `setup_task.bat`.
-4. A cada logon o daemon sobe oculto e começa a controlar a fan.
+4. A cada logon o app sobe oculto e controla as fans.
 
 **Monitorar** sem abrir janela:
 ```bat
@@ -208,8 +192,7 @@ type "C:\Program Files\ipmicfg\app\logs\fan_controller.log"
 ```
 Ou em PowerShell: `Get-Content ...\fan_controller.log -Tail 30`.
 
-O log registra cada mudança de velocidade com `PASS`/`FAIL` (ex.:
-`GPU 39C -> 20% [PASS] (FRNT_FAN1 duty=14)`).
+O log registra as duties aplicadas (ex.: `fans: CPU_FAN1=25% REAR_FAN1=20% ... FRNT_FAN1=40% ...`).
 
 ---
 
@@ -217,27 +200,23 @@ O log registra cada mudança de velocidade com `PASS`/`FAIL` (ex.:
 
 | Ação | Comando |
 |------|---------|
-| Parar o daemon (limpo) + restaurar auto | `stop.bat` |
+| Parar o app (limpo) + restaurar auto | `stop.bat` |
 | Remover a tarefa do logon | `remove_task.bat` |
 | Verificar a tarefa | `schtasks /query /tn "IPMI-FanController"` |
 
-> **Importante:** `schtasks /end` deixa o processo node órfão. Use `stop.bat` para parar de
-> forma limpa (mata o daemon e restaura o modo automático do BMC).
+> **Importante:** use `stop.bat` (mata o `controller.js` e restaura o modo automático do BMC).
+> O app também restaura o auto se encerrado com Ctrl+C/SIGTERM.
 
 ---
 
 ## 11. Validação e Testes
 
-`test_fan.bat` (ou `node fan_controller.js --validate`) executa:
-1. Leitura do estado (`0x3a 0x02`) — não pode falhar
-2. Restauração do modo automático
-3. Listagem das fans (`-sdr`)
-4. Manual 40% em todas → readback
-5. Per-fan: só a escolhida com duty, demais 0x00 → confirma que as outras **continuam girando**
-6. Ramp 20/50/80/100/50/20 → readback `PASS` em cada
-7. Restauração do automático
-
-Saída final: `=== VALIDACAO OK (sem falhas) ===`.
+- **Teste de conexão:** aba **Configuração** → **Testar conexão**, ou `test_fan.bat`
+  (chama `GET /api/test` do app em execução).
+- **Teste de fan:** aba **Mapping** → botão **Test** na linha da fan — acelera a fan a **100%**
+  por `testDurationSec` (default 10s) e volta ao controle normal.
+- **Log:** cada mudança de duty é registrada; erros de leitura aparecem com motivo
+  (`leitura instável...` / `FALLBACK...`).
 
 ---
 
@@ -245,43 +224,45 @@ Saída final: `=== VALIDACAO OK (sem falhas) ===`.
 
 | Sintoma | Causa provável | Solução |
 |---------|----------------|---------|
-| `Can not find a valid IPMI device` | IPMICFG rodando fora da própria pasta, ou versão 1.38.0 | Usar a pasta `ipmi_1.27.1\Windows\64bit` como `ipmi.dir` |
-| `Completion Code=C7h` ao setar | Nº de argumentos errado | O comando manual é `0x3a 0x01 0x00` + **7 duties** (10 args) |
-| `C1h` com `-fan` | Comando `-fan` não é suportado na ASRock | Usar apenas os `-raw 0x3a` (o app já faz isso) |
-| Fan não muda de velocidade | Fan não detectada (sem RPM) ou porta errada | Ver `list`; conferir se a fan está ligada no header certo |
-| `GPU indisponivel` no log | `nvidia-smi` sem resposta | Verificar driver/GPU; após 3 falhas o app restaura auto |
-| Fan não sobe (~1800 RPM) mesmo com duty alto | **Quirk do BMC:** com `0x00` nas outras slots a fan da P100 fica no mínimo | Manter `behavior.applyToAll: true` (default) |
-| Modo ficou manual após morte do daemon | Processo morto à força (sem `stop.bat`) | Rodar `stop.bat` ou `node fan_controller.js --once` (restaura auto) |
-| Argumamentos corrompidos no PowerShell | PowerShell altera a formatação | Não digitar os `-raw` manualmente no PowerShell; usar o app/`.bat` |
+| `login HTTP da BMC falhou` | Credenciais/endereço errados | Corrigir `bmc.*` no `config.json` / aba Configuração |
+| `getallsensors HTTP status ...` | BMC web inacessível (IP/rede) | Verificar `bmc.address` e conectividade |
+| `FALLBACK ... fans a 100%` | Leitura falhou 2 ticks seguidos | Verificar rede/credenciais; o app recupera sozinho |
+| `Can not find a valid IPMI device` | IPMICFG fora da pasta certa, ou 1.38.0 | Usar `ipmi_1.27.1\Windows\64bit` como `ipmi.dir` |
+| `Completion Code=C7h` ao setar | Nº de argumentos errado | O comando manual é `0x3a 0x01 0x00` + **7 duties** |
+| Fan não muda de velocidade | Fan não detectada ou porta errada | Conferir na aba Mapping com o botão Test |
+| Fan da P100 travada (~1800 RPM) | `globalMin` em `0` (envia `0x00`) | Manter `behavior.globalMin: 20` |
+| Modo ficou manual após morte do app | Processo morto à força | Rodar `stop.bat` |
+| PowerShell corrompe `-raw` | PowerShell altera a formatação | Não digitar `-raw` manualmente no PowerShell; usar o app |
 
 ---
 
 ## 13. Mapeamento das Fans
 
-O BMC expõe **7 slots de duty** (+ 1 byte de modo) pelo comando `0x3a`:
+A BMC expõe **7 slots de duty** (+ modo) via `0x3a`; a **8ª fan não é controlável** por este comando.
+**Importante:** a BMC **nomeia os slots de forma deslocada** em relação ao silkscreen da placa.
+O app usa os nomes **físicos** (silkscreen) no controle/UI:
 
-| Posição | Nome | SDR | Status |
-|---------|------|-----|--------|
-| 1 | CPU_FAN1 | 17 | Controlável (conectada) |
-| 2 | CPU_FAN2 | 18 | Controlável (conectada) |
-| 3 | REAR_FAN1 | 19 | Controlável (conectada) |
-| 4 | REAR_FAN2 | 20 | Controlável (conectada) |
-| 5 | **FRNT_FAN1** (Tesla P100) | 21 | **Controlável (default)** |
-| 6 | FRNT_FAN2 | 22 | Controlável se houver fan (hoje: sem fan) |
-| 7 | FRNT_FAN3 | 23 | Controlável se houver fan (hoje: sem fan) |
-| 8 | FRNT_FAN4 | 24 | **Não controlável** (comando não tem 8º slot) |
+| Slot | Nome físico (UI) | Nome que a BMC reporta | Controlável? |
+|------|------------------|------------------------|--------------|
+| 1 | CPU_FAN1 | CPU_FAN1 | ✅ |
+| 2 | REAR_FAN1 | CPU_FAN2 | ✅ |
+| 3 | REAR_FAN2 | REAR_FAN1 | ✅ |
+| 4 | **FRNT_FAN1** (GPU P100) | REAR_FAN2 | ✅ (curva GPU) |
+| 5 | FRNT_FAN2 | FRNT_FAN1 | ✅ |
+| 6 | FRNT_FAN3 | FRNT_FAN2 | ✅ |
+| 7 | FRNT_FAN4 | FRNT_FAN3 | ✅ |
+| 8 | CPU_FAN2 | FRNT_FAN4 | ❌ (auto da BMC) |
 
-> Fan ligada em FRNT_FAN2/3 (pos 6/7) vira controlável com `select 6`/`select 7`.
-> FRNT_FAN4 (pos 8) não é alcançada por este comando, mesmo com fan ligada.
+> A ventoinha adaptada da **Tesla P100** está na **FRNT_FAN1 = slot 4** (curva GPU). A 8ª fan
+> (**CPU_FAN2**) não é alcançada pelo comando `0x3a` e permanece sob controle automático da BMC.
 
 ---
 
 ## 14. Notas de Segurança
 
-- ⚠️ **Quirk do BMC:** com duty `0x00` nas outras slots, a fan da P100 **fica travada no mínimo**
-  (~1800 RPM) mesmo com duty 100% nela. Por isso o app usa `behavior.applyToAll: true` (default) —
-  aplica a curva em todas as slots. Só desative se validar o contrário em outro hardware.
-- O modo manual é **global**: ao controlar a fan escolhida, as demais entram em manual no BMC.
-- Se o daemon for morto à força, o BMC fica em manual até o **reboot** ou próximo logon.
-  Use `stop.bat` para parar de forma limpa.
-- Monitore o log periodicamente para garantir `PASS` contínuo.
+- ⚠️ **Quirk do BMC:** com duty `0x00` nas outras slots, a fan da P100 **fica travada no mínimo**.
+  Por isso o app usa `behavior.globalMin: 20` — nunca envia `0x00`.
+- Se a **leitura falhar por 2 ticks consecutivos**, o app manda **todas as fans a 100%** (seguro) e
+  recupera sozinho quando a leitura voltar.
+- Se o processo for morto à força, o BMC fica em manual até `stop.bat` ou o reboot.
+- Monitore o log periodicamente.

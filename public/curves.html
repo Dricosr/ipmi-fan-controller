@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IPMI Fan Controller — Curvas</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>🌀 IPMI Fan Controller</h1>
+  <nav>
+    <a href="/">Dashboard</a>
+    <a href="mapping.html">Mapping</a>
+    <a href="curves.html" class="active">Curvas</a>
+    <a href="settings.html">Configuração</a>
+  </nav>
+  <div id="status"><span class="dot"></span> …</div>
+</header>
+<main>
+  <div class="grid2">
+    <section class="card">
+      <h2>Curva CPU <span class="dim">(CPU_FAN1/2 e traseiras)</span></h2>
+      <svg id="chartCpu" class="chart" viewBox="0 0 320 170"></svg>
+      <table class="curve">
+        <thead><tr><th>Temp (°C)</th><th>% Fan</th><th></th></tr></thead>
+        <tbody id="rowsCpu"></tbody>
+      </table>
+      <button type="button" id="addCpu" class="add">+ Adicionar ponto</button>
+    </section>
+    <section class="card">
+      <h2>Curva GPU <span class="dim">(FRNT_FAN1 / P100)</span></h2>
+      <svg id="chartGpu" class="chart" viewBox="0 0 320 170"></svg>
+      <table class="curve">
+        <thead><tr><th>Temp (°C)</th><th>% Fan</th><th></th></tr></thead>
+        <tbody id="rowsGpu"></tbody>
+      </table>
+      <button type="button" id="addGpu" class="add">+ Adicionar ponto</button>
+    </section>
+  </div>
+  <div class="row savebar">
+    <button id="btnSave" class="primary">Salvar curvas</button>
+    <span id="msg" class="msg"></span>
+  </div>
+  <p class="dim">Regra: para uma temperatura, vale a % do maior ponto ≤ temp (abaixo do 1º ponto = mínimo 20%).</p>
+</main>
+<footer><a href="/">← Voltar ao Dashboard</a></footer>
+<script src="curves.js"></script>
+</body>
+</html>

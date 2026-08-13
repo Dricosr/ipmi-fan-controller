@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IPMI Fan Controller — Dashboard</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>🌀 IPMI Fan Controller</h1>
+  <nav>
+    <a href="/" class="active">Dashboard</a>
+    <a href="mapping.html">Mapping</a>
+    <a href="curves.html">Curvas</a>
+    <a href="settings.html">Configuração</a>
+  </nav>
+  <div id="status"><span class="dot"></span> conectando…</div>
+</header>
+<main>
+  <section id="temps" class="grid"></section>
+  <section class="card">
+    <h2>Fans</h2>
+    <table id="fans">
+      <thead><tr><th>Porta</th><th>Fan</th><th>RPM</th><th>Duty</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+  <section class="card">
+    <h2>Voltagens</h2>
+    <div id="volts" class="chips"></div>
+  </section>
+  <section class="card">
+    <h2>Sensores (todos)</h2>
+    <table id="allSensors">
+      <thead><tr><th>ID</th><th>Sensor</th><th>Status</th><th>Leitura</th><th>Limites (baixo/alto)</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+</main>
+<footer><span id="ts"></span></footer>
+<script src="app.js"></script>
+</body>
+</html>

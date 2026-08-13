@@ -1,5 +1,5 @@
 @echo off
-REM Inicia o fan controller em MODO INTERATIVO (janela visivel p/ debug/testes)
+REM Inicia o controller.js em JANELA VISIVEL (p/ debug/testes)
 cd /d "C:\Program Files\ipmicfg\app"
-"C:\Program Files\nodejs\node.exe" fan_controller.js %*
+"C:\Program Files\nodejs\node.exe" controller.js %*
 pause

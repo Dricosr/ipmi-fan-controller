@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IPMI Fan Controller — Configuração</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>🌀 IPMI Fan Controller</h1>
+  <nav>
+    <a href="/">Dashboard</a>
+    <a href="mapping.html">Mapping</a>
+    <a href="curves.html">Curvas</a>
+    <a href="settings.html" class="active">Configuração</a>
+  </nav>
+  <div id="status"><span class="dot"></span> …</div>
+</header>
+<main>
+  <section class="card">
+    <h2>Leitura de sensores (via web da BMC)</h2>
+    <form id="cfgForm">
+      <label>Endereço da BMC (obrigatório — leitura via web HTTP)
+        <input type="text" id="bmcAddress" placeholder="192.168.18.200">
+      </label>
+      <label>Usuário
+        <input type="text" id="bmcUser" placeholder="admin">
+      </label>
+      <label>Senha
+        <input type="password" id="bmcPassword" placeholder="••••••">
+      </label>
+      <label>Intervalo de leitura/atualização (segundos)
+        <input type="number" id="sensorInterval" min="1" max="60" step="1">
+      </label>
+      <div class="row">
+        <button type="submit" id="btnSave" class="primary">Salvar</button>
+        <button type="button" id="btnTest">Testar conexão</button>
+      </div>
+    </form>
+    <p id="msg" class="msg"></p>
+    <p id="modeInfo" class="dim"></p>
+  </section>
+</main>
+<footer><a href="/">← Voltar ao Dashboard</a></footer>
+<script src="settings.js"></script>
+</body>
+</html>
