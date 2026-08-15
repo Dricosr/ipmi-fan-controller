@@ -74,7 +74,10 @@ function runIpmi(args, timeoutMs = 8000) {
     try { child = spawn(IPMI_EXE, args, { cwd: IPMI_DIR, windowsHide: true }); }
     catch (e) { return resolve({ code: -1, out: '', err: String(e) }); }
     let out = '', err = '';
-    const timer = setTimeout(() => { try { child.kill(); } catch (_) {} }, timeoutMs);
+    const timer = setTimeout(() => {
+      try { child.kill(); } catch (_) {}
+      resolve({ code: -1, out, err: 'timeout' }); // resolve MESMO se o child não fechar (não trava a fila)
+    }, timeoutMs);
     child.stdout.on('data', d => { out += d; });
     child.stderr.on('data', d => { err += d; });
     child.on('error', e => { clearTimeout(timer); resolve({ code: -1, out, err: String(e) }); });
@@ -121,13 +124,16 @@ let bmcSessionCookie = null;
 let bmcLoginBusy = null;            // mutex: evita logins concorrentes
 let lastLoginAt = 0;                // timestamp da última tentativa de login
 let lastLoginOk = false;            // se o último login foi bem-sucedido
-const LOGIN_MIN_INTERVAL_MS = 5000; // throttle p/ não martelar a BMC quando ela estiver fora
+let loginCount = 0;                 // nº total de logins HTTP (observar flood de sessões)
+const LOGIN_MIN_INTERVAL_MS = 5000;   // throttle p/ não martelar a BMC quando ela estiver fora
+const LOGIN_DOWN_INTERVAL_MS = 30000; // quando a BMC está fora (sem sessão válida), espaçar muito mais
 
-function bmcHttp(method, path, body, timeout = 6000) {
+function bmcHttp(method, path, body, timeout = 6000, cookie) {
   return new Promise((resolve) => {
     const headers = { Referer: 'http://' + (BMC.address || '') + '/page/sensor_readings.html' };
     if (body) { headers['Content-Type'] = 'application/x-www-form-urlencoded'; headers['Content-Length'] = Buffer.byteLength(body); }
-    if (bmcSessionCookie) headers['Cookie'] = 'SessionCookie=' + bmcSessionCookie;
+    const ck = cookie || bmcSessionCookie;
+    if (ck) headers['Cookie'] = 'SessionCookie=' + ck;
     const r = http.request({ host: BMC.address || '', port: 80, path, method, headers, timeout }, (res) => {
       let d = ''; res.on('data', c => d += c); res.on('end', () => resolve({ status: res.statusCode, body: d }));
     });
@@ -138,14 +144,25 @@ function bmcHttp(method, path, body, timeout = 6000) {
   });
 }
 
+// Logout best-effort de uma sessão antiga (libera slot na BMC — evita acumular sessões e travar a BMC)
+function bmcLogout(cookie) {
+  if (!cookie) return;
+  const short = cookie.slice(0, 6);
+  bmcHttp('POST', '/rpc/WEBSES/logout.asp', null, 3000, cookie)
+    .then(r => { if (r.status === 200) log('BMC: logout sessão antiga (' + short + '…) ok'); else log('BMC: logout sessão antiga (' + short + '…) status ' + r.status); })
+    .catch(() => log('BMC: logout sessão antiga (' + short + '…) falhou'));
+}
+
 // Login na web BMC. Com throttle: se o último login FALHOU há pouco, não tenta de novo
 // (evita martelar a BMC quando está fora); após sucesso, retenta livremente p/ renovar sessão.
 async function bmcLogin() {
   if (bmcLoginBusy) return bmcLoginBusy; // reaproveita login em andamento (chamadas concorrentes)
   const now = Date.now();
-  if (now - lastLoginAt < LOGIN_MIN_INTERVAL_MS && !lastLoginOk) return false; // throttle pós-falha
+  const minInterval = lastLoginOk ? LOGIN_MIN_INTERVAL_MS : LOGIN_DOWN_INTERVAL_MS;
+  if (now - lastLoginAt < minInterval && !lastLoginOk) return false; // throttle pós-falha
   lastLoginAt = now;
   bmcLoginBusy = (async () => {
+    const oldCookie = bmcSessionCookie;
     try {
       const r = await bmcHttp('POST', '/rpc/WEBSES/create.asp',
         'WEBVAR_USERNAME=' + encodeURIComponent(BMC.user || '') + '&WEBVAR_PASSWORD=' + encodeURIComponent(BMC.password || ''));
@@ -153,7 +170,9 @@ async function bmcLogin() {
       if (m && r.status === 200) {
         bmcSessionCookie = m[1];
         lastLoginOk = true;
-        log('BMC: sessão HTTP renovada (' + m[1].slice(0, 6) + '…)');
+        loginCount++;
+        bmcLogout(oldCookie); // descarta a sessão antiga (assíncrono, não bloqueia)
+        log('BMC: login #' + loginCount + ' — sessão HTTP renovada (' + m[1].slice(0, 6) + '…)');
         return true;
       }
       bmcSessionCookie = null;
@@ -212,6 +231,7 @@ function parseGetAllSensors(body) {
 }
 
 async function readSensorsFast() {
+  const t0 = Date.now();
   const out = { ok: true, gpu: null, temps: {}, fans: [], volts: {}, all: [], reason: null };
   if (!BMC.address) { out.ok = false; out.reason = 'sem endereço BMC configurado'; return out; }
   // Garante sessão (login inicial ou renovação após expirar/limpar)
@@ -219,12 +239,14 @@ async function readSensorsFast() {
   let r = await bmcHttp('GET', '/rpc/getallsensors.asp');
   // Sessão expirada? (status != 200 OU resposta sem os sensores) -> re-login 1x e relê
   if (r.status !== 200 || !hasSensorData(r.body)) {
+    log('BMC: leitura falhou (status ' + r.status + (hasSensorData(r.body) ? '' : ', sem sensores') + ') — re-login 1x');
     bmcSessionCookie = null;
     if (await bmcLogin()) r = await bmcHttp('GET', '/rpc/getallsensors.asp');
   }
   if (r.status !== 200 || !hasSensorData(r.body)) {
     out.ok = false;
     out.reason = 'getallsensors HTTP status ' + r.status + (hasSensorData(r.body) ? '' : ' (resposta sem sensores)');
+    lastLoginOk = false; // backoff 30s no próximo login — evita STORM de sessões quando a BMC sofre
     return out;
   }
   const p = parseGetAllSensors(r.body);
@@ -232,6 +254,8 @@ async function readSensorsFast() {
   lastLoginOk = true; // leitura com sessão válida
   out.temps = p.temps; out.fans = p.fans; out.volts = p.volts; out.all = p.all;
   out.gpu = await getGpuTemp();
+  const dt = Date.now() - t0;
+  if (dt > 2000) log('BMC: leitura lenta (' + dt + 'ms)');
   return out;
 }
 
@@ -302,9 +326,22 @@ async function readSensorsWithRetry() {
   return last;
 }
 
+const CONTROL_TICK_TIMEOUT_MS = 25000;
 async function controlTick() {
   if (controlBusy || stopping) return;
   controlBusy = true;
+  try {
+    await Promise.race([
+      controlTickInner(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('controlTick timeout (>' + CONTROL_TICK_TIMEOUT_MS + 'ms)')), CONTROL_TICK_TIMEOUT_MS))
+    ]);
+  } catch (e) {
+    lastError = String(e && e.message || e);
+    log('erro controlTick: ' + lastError);
+  } finally { controlBusy = false; }
+}
+
+async function controlTickInner() {
   try {
     const s = await readSensorsWithRetry();
     latestSensors = s;
@@ -339,7 +376,7 @@ async function controlTick() {
   } catch (e) {
     lastError = String(e && e.message || e);
     log('erro controlTick: ' + lastError);
-  } finally { controlBusy = false; }
+  }
 }
 
 let controlTimer = null;
@@ -450,6 +487,7 @@ async function shutdown() {
   stopping = true;
   log('=== Encerrando — restaurando modo automático ===');
   try { await setAuto(); } catch (_) {}
+  releaseLock();
   process.exit(0);
 }
 
@@ -458,4 +496,22 @@ process.on('SIGTERM', shutdown);
 
 /* ---------------- Main ---------------- */
 
+// Bloqueio de instância única (evita dois controllers controlando as fans / conflito de porta)
+const LOCK_PATH = path.join(APP_DIR, '.controller.lock');
+function acquireLock() {
+  try {
+    if (fs.existsSync(LOCK_PATH)) {
+      const oldPid = parseInt(fs.readFileSync(LOCK_PATH, 'utf8'), 10);
+      if (oldPid && oldPid !== process.pid) {
+        try { process.kill(oldPid, 0); console.error('Outro controller já está rodando (PID ' + oldPid + ') — abortando.'); process.exit(1); }
+        catch (_) { /* PID morto → pode assumir o lock */ }
+      }
+    }
+    fs.writeFileSync(LOCK_PATH, String(process.pid));
+  } catch (_) {}
+}
+function releaseLock() { try { fs.unlinkSync(LOCK_PATH); } catch (_) {} }
+
+acquireLock();
+process.on('exit', releaseLock);
 detectMode().then(prefix => { IPMI_PREFIX = prefix; startControl(); startServer(); });
