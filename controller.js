@@ -145,12 +145,20 @@ function bmcHttp(method, path, body, timeout = 6000, cookie) {
 }
 
 // Logout best-effort de uma sessão antiga (libera slot na BMC — evita acumular sessões e travar a BMC)
+const pendingLogouts = new Set(); // cookies com logout em curso (evita duplicar; retenta até 3x)
 function bmcLogout(cookie) {
-  if (!cookie) return;
-  const short = cookie.slice(0, 6);
-  bmcHttp('POST', '/rpc/WEBSES/logout.asp', null, 3000, cookie)
-    .then(r => { if (r.status === 200) log('BMC: logout sessão antiga (' + short + '…) ok'); else log('BMC: logout sessão antiga (' + short + '…) status ' + r.status); })
-    .catch(() => log('BMC: logout sessão antiga (' + short + '…) falhou'));
+  if (!cookie || pendingLogouts.has(cookie)) return;
+  pendingLogouts.add(cookie);
+  (async () => {
+    const short = cookie.slice(0, 6);
+    for (let i = 0; i < 3; i++) {
+      const r = await bmcHttp('POST', '/rpc/WEBSES/logout.asp', null, 3000, cookie);
+      if (r.status === 200) { pendingLogouts.delete(cookie); log('BMC: logout sessão antiga (' + short + '…) ok'); return; }
+      if (i < 2) await new Promise(res => setTimeout(res, 1000));
+    }
+    pendingLogouts.delete(cookie);
+    log('BMC: logout sessão antiga (' + short + '…) falhou (3 tentativas) — sessão ficará na BMC até expirar');
+  })().catch(() => { pendingLogouts.delete(cookie); });
 }
 
 // Login na web BMC. Com throttle: se o último login FALHOU há pouco, não tenta de novo
@@ -159,7 +167,7 @@ async function bmcLogin(previousCookie) {
   if (bmcLoginBusy) return bmcLoginBusy; // reaproveita login em andamento (chamadas concorrentes)
   const now = Date.now();
   const minInterval = lastLoginOk ? LOGIN_MIN_INTERVAL_MS : LOGIN_DOWN_INTERVAL_MS;
-  if (now - lastLoginAt < minInterval && !lastLoginOk) return false; // throttle pós-falha
+  if (now - lastLoginAt < minInterval) return false; // throttle SEMPRE (nunca >1 login no intervalo)
   lastLoginAt = now;
   bmcLoginBusy = (async () => {
     const oldCookie = previousCookie || bmcSessionCookie; // captura a sessão a descartar ANTES de ser substituída
@@ -237,9 +245,13 @@ async function readSensorsFast() {
   // Garante sessão (login inicial ou renovação após expirar/limpar)
   if (!bmcSessionCookie && !(await bmcLogin())) { out.ok = false; out.reason = 'login HTTP da BMC falhou'; return out; }
   let r = await bmcHttp('GET', '/rpc/getallsensors.asp');
-  // Sessão expirada? (status != 200 OU resposta sem os sensores) -> re-login 1x e relê
-  if (r.status !== 200 || !hasSensorData(r.body)) {
-    log('BMC: leitura falhou (status ' + r.status + (hasSensorData(r.body) ? '' : ', sem sensores') + ') — re-login 1x');
+  // Renova sessão SÓ com sinal claro de sessão inválida:
+  //  - 302/401 = redirect/negação de login (sessão expirada ou rejeitada)
+  //  - 200 sem dados de sensores = página de login servida (sessão inválida)
+  // Em timeout (-1)/5xx/503 a BMC está lenta ou cheia -> NÃO renova (um login extra pioraria o flood).
+  const sessionInvalid = (r.status === 302) || (r.status === 401) || (r.status === 200 && !hasSensorData(r.body));
+  if (sessionInvalid) {
+    log('BMC: sessão inválida (status ' + r.status + ') — re-login 1x');
     const staleCookie = bmcSessionCookie; // guarda a sessão antiga p/ logout (não perdê-la ao anular)
     bmcSessionCookie = null;
     if (await bmcLogin(staleCookie)) r = await bmcHttp('GET', '/rpc/getallsensors.asp');
@@ -418,7 +430,7 @@ function startServer() {
             if (nc.bmc.address !== undefined) BMC.address = String(nc.bmc.address).trim();
             if (nc.bmc.user !== undefined) BMC.user = String(nc.bmc.user);
             if (nc.bmc.password && nc.bmc.password !== '***') BMC.password = String(nc.bmc.password);
-            bmcSessionCookie = null; // credenciais/endereço mudaram -> descarta sessão antiga
+            if (bmcSessionCookie) { bmcLogout(bmcSessionCookie); bmcSessionCookie = null; } // libera sessão antiga (se host mudou, logout é inócuo)
           }
           if (nc.sensor && nc.sensor.interval !== undefined) sensorIntervalSec = Math.max(1, Math.min(60, parseInt(nc.sensor.interval, 10) || 2));
           if (nc.curves) {
@@ -488,6 +500,10 @@ async function shutdown() {
   stopping = true;
   log('=== Encerrando — restaurando modo automático ===');
   try { await setAuto(); } catch (_) {}
+  if (bmcSessionCookie) {
+    log('BMC: logout da sessão no encerramento…');
+    try { await bmcHttp('POST', '/rpc/WEBSES/logout.asp', null, 3000, bmcSessionCookie); } catch (_) {}
+  }
   releaseLock();
   process.exit(0);
 }
