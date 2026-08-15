@@ -22,7 +22,7 @@ não lê a temperatura da GPU. Este app lê **todos** os sensores (GPU via `nvid
 web da BMC) e controla **todas as fans** por curvas de temperatura, via **IPMI raw** no BMC.
 
 > **Resultado:** fans silenciosas em idle e 100% quando necessário, com **web UI** de monitoramento
-> (Dashboard, Mapping, Curvas, Configuração) e **teste de fan** por porta.
+> (Dashboard, Mapping, Curvas, Configuração), **teste de fan** por porta e **reinício da BMC**.
 
 ---
 
@@ -76,13 +76,33 @@ A cada `sensor.interval` (default 3s):
 
 ---
 
-## 📁 Estrutura do projeto
+## � Sessão única da BMC (anti-flood)
+
+A BMC **Megarac SP (AMI)** tem uma **tabela de sessões limitada**. Se o app criar sessões sem
+liberá-las, a tabela enche e a **web da BMC para de responder** (travamento). O app mantém
+**uma única sessão**:
+
+- **Login** só quando não há sessão, ou quando a BMC rejeita a sessão atual (`302`/`401`/página de login).
+- **Timeout/5xx/503** (BMC lenta ou cheia) **não** gera novo login — mantém a sessão (evita storm).
+- **Logout** da sessão antiga ao renovar, com **retry 3×**; também no encerramento e ao mudar a config.
+- **Throttle** de login: mínimo **5s** (após sucesso) / **30s** (após falha) entre logins.
+
+**Se a BMC travar:** use o botão **Reiniciar BMC** (Configuração) ou, no shell, `IPMICFG-Win.exe -r`
+(cold reset). Se até o IPMI morrer, desligue da tomada ~30s (o reboot do SO **não** reinicia o BMC).
+
+**Monitor de flood:** `powershell -ExecutionPolicy Bypass -File monitor_bmc.ps1` — mostra saúde do app
+e sinais de flood (nº de logins, logouts com falha, `HTTP 503`, re-logins, leituras lentas).
+
+---
+
+## �📁 Estrutura do projeto
 
 ```
 ipmicfg/app
 ├── controller.js          # App único (leitura + controle + web UI)
 ├── config.json            # BMC, intervalo, curvas, fanMapping, fanNames
 ├── public/                # Web UI (HTML/JS/CSS): dashboard, mapping, curvas, config
+├── monitor_bmc.ps1        # Monitor de saúde + sinais de flood de sessões (rode sob demanda)
 ├── README.md              # Este arquivo
 ├── MANUAL_OPERACAO.md     # Manual de operação completo (PT)
 ├── run_visible.bat        # Abre o app em janela visível (debug)
@@ -120,6 +140,7 @@ Depois, abra **http://127.0.0.1:3041** no navegador.
 - `GET/PUT /api/config` — BMC, intervalo, curvas, fanMapping
 - `GET /api/test` — teste de conexão (GPU + CPU/MB via web BMC)
 - `POST /api/fan/<slot>/test` — acelera a fan escolhida a 100% por N segundos
+- `POST /api/bmc/reset` — cold reset da BMC (`IPMICFG -r`); use quando a web da BMC travar
 
 ---
 
