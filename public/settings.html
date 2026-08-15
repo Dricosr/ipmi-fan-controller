@@ -42,6 +42,13 @@
     <p id="msg" class="msg"></p>
     <p id="modeInfo" class="dim"></p>
   </section>
+
+  <section class="card">
+    <h2>Manutenção da BMC</h2>
+    <p class="dim">Reinicia (cold reset) a BMC via IPMICFG. Use quando a web da BMC travar (ex.: tabela de sessões cheia). Durante o reset a leitura de sensores e o controle das fans ficam indisponíveis (~2–4 min); o app reconecta sozinho.</p>
+    <button type="button" id="btnResetBmc" class="danger">Reiniciar BMC</button>
+    <p id="resetMsg" class="msg"></p>
+  </section>
 </main>
 <footer><a href="/">← Voltar ao Dashboard</a></footer>
 <script src="settings.js"></script>

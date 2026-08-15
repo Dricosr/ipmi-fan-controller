@@ -65,6 +65,30 @@ async function testConn() {
   }
 }
 
+function setResetMsg(txt, ok) {
+  $('#resetMsg').textContent = txt;
+  $('#resetMsg').className = 'msg ' + (ok === false ? 'bad' : ok === true ? 'good' : '');
+}
+
+async function resetBmc() {
+  const okc = confirm('Reiniciar a BMC (cold reset)?\n\nA web/sensores da BMC ficarão indisponíveis por ~2–4 minutos e as fans podem ir a 100% durante o reset. O app reconecta sozinho.');
+  if (!okc) return;
+  const btn = $('#btnResetBmc');
+  btn.disabled = true;
+  setResetMsg('Reiniciando a BMC… (aguarde, pode levar alguns segundos)');
+  try {
+    const r = await fetch('/api/bmc/reset', { method: 'POST' });
+    const d = await r.json();
+    if (d.ok) setResetMsg('✅ ' + (d.output || 'BMC reiniciando.') + ' — web/sensores fora por alguns minutos; o app reconecta sozinho.', true);
+    else setResetMsg('❌ ' + (d.error || 'erro ao reiniciar a BMC'), false);
+  } catch (e) {
+    setResetMsg('Erro: ' + e.message, false);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 $('#cfgForm').addEventListener('submit', (e) => { e.preventDefault(); save(); });
 $('#btnTest').addEventListener('click', testConn);
+$('#btnResetBmc').addEventListener('click', resetBmc);
 loadCfg();

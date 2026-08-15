@@ -44,6 +44,8 @@ input:focus { outline: none; border-color: var(--acc); }
 button { padding: 10px 18px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--txt); font-size: 14px; cursor: pointer; }
 button:hover { border-color: var(--acc); }
 button.primary { background: var(--acc); color: #06121c; border: none; font-weight: 600; }
+button.danger { background: var(--bad); color: #fff; border: none; font-weight: 600; }
+button.danger:disabled { opacity: .6; cursor: wait; }
 .msg { min-height: 20px; font-size: 14px; margin-top: 12px; }
 .msg.good { color: var(--ok); }
 .msg.bad { color: var(--bad); }

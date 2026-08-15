@@ -125,6 +125,7 @@ let bmcLoginBusy = null;            // mutex: evita logins concorrentes
 let lastLoginAt = 0;                // timestamp da última tentativa de login
 let lastLoginOk = false;            // se o último login foi bem-sucedido
 let loginCount = 0;                 // nº total de logins HTTP (observar flood de sessões)
+let bmcResetBusy = false;           // evita resets concorrentes da BMC
 const LOGIN_MIN_INTERVAL_MS = 5000;   // throttle p/ não martelar a BMC quando ela estiver fora
 const LOGIN_DOWN_INTERVAL_MS = 30000; // quando a BMC está fora (sem sessão válida), espaçar muito mais
 
@@ -477,6 +478,30 @@ function startServer() {
     const mTest = u.pathname.match(/^\/api\/fan\/(\d+)\/test$/);
     if (mTest && req.method === 'POST') { testFan(mTest[1]).then(r => send(r)); return; }
     if (u.pathname === '/api/fan/teststop' && req.method === 'POST') { send(testStop()); return; }
+    if (u.pathname === '/api/bmc/reset' && req.method === 'POST') {
+      if (bmcResetBusy) { send({ ok: false, error: 'Já existe um reset da BMC em andamento.' }, 409); return; }
+      bmcResetBusy = true;
+      (async () => {
+        try {
+          log('BMC: reset (cold) solicitado via UI');
+          const r = await runIpmi([...IPMI_PREFIX, '-r'], 20000);
+          const out = (((r.out || '') + ' ' + (r.err || '')).trim());
+          if (r.code === 0 && /successfully completed/i.test(out)) {
+            log('BMC: reset concluído — ' + out);
+            send({ ok: true, output: out, note: 'A BMC reiniciará (web/sensores fora por ~2-4 min); o app reconecta sozinho.' });
+          } else {
+            log('BMC: reset falhou — ' + (out || 'código ' + r.code));
+            send({ ok: false, error: out || ('código ' + r.code) }, 500);
+          }
+        } catch (e) {
+          log('BMC: reset erro — ' + String(e && e.message || e));
+          send({ ok: false, error: String(e && e.message || e) }, 500);
+        } finally {
+          bmcResetBusy = false;
+        }
+      })();
+      return;
+    }
 
     // estáticos
     const rel = u.pathname === '/' ? 'index.html' : u.pathname.replace(/^\/+/, '');
