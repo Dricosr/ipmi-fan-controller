@@ -155,14 +155,14 @@ function bmcLogout(cookie) {
 
 // Login na web BMC. Com throttle: se o último login FALHOU há pouco, não tenta de novo
 // (evita martelar a BMC quando está fora); após sucesso, retenta livremente p/ renovar sessão.
-async function bmcLogin() {
+async function bmcLogin(previousCookie) {
   if (bmcLoginBusy) return bmcLoginBusy; // reaproveita login em andamento (chamadas concorrentes)
   const now = Date.now();
   const minInterval = lastLoginOk ? LOGIN_MIN_INTERVAL_MS : LOGIN_DOWN_INTERVAL_MS;
   if (now - lastLoginAt < minInterval && !lastLoginOk) return false; // throttle pós-falha
   lastLoginAt = now;
   bmcLoginBusy = (async () => {
-    const oldCookie = bmcSessionCookie;
+    const oldCookie = previousCookie || bmcSessionCookie; // captura a sessão a descartar ANTES de ser substituída
     try {
       const r = await bmcHttp('POST', '/rpc/WEBSES/create.asp',
         'WEBVAR_USERNAME=' + encodeURIComponent(BMC.user || '') + '&WEBVAR_PASSWORD=' + encodeURIComponent(BMC.password || ''));
@@ -240,8 +240,9 @@ async function readSensorsFast() {
   // Sessão expirada? (status != 200 OU resposta sem os sensores) -> re-login 1x e relê
   if (r.status !== 200 || !hasSensorData(r.body)) {
     log('BMC: leitura falhou (status ' + r.status + (hasSensorData(r.body) ? '' : ', sem sensores') + ') — re-login 1x');
+    const staleCookie = bmcSessionCookie; // guarda a sessão antiga p/ logout (não perdê-la ao anular)
     bmcSessionCookie = null;
-    if (await bmcLogin()) r = await bmcHttp('GET', '/rpc/getallsensors.asp');
+    if (await bmcLogin(staleCookie)) r = await bmcHttp('GET', '/rpc/getallsensors.asp');
   }
   if (r.status !== 200 || !hasSensorData(r.body)) {
     out.ok = false;
