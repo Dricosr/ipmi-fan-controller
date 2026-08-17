@@ -64,11 +64,11 @@
     },
     "mobo": {
       "35": 0,
-      "45": 20,
-      "50": 40,
-      "55": 60,
-      "60": 80,
-      "65": 100
+      "38": 20,
+      "41": 40,
+      "44": 60,
+      "47": 80,
+      "50": 100
     }
   },
   "fanMapping": {
@@ -78,11 +78,11 @@
     },
     "2": {
       "sensor": "mb",
-      "curve": "cpu"
+      "curve": "mobo"
     },
     "3": {
       "sensor": "mb",
-      "curve": "cpu"
+      "curve": "mobo"
     },
     "4": {
       "sensor": "gpu",
@@ -90,15 +90,15 @@
     },
     "5": {
       "sensor": "mb",
-      "curve": "cpu"
+      "curve": "mobo"
     },
     "6": {
       "sensor": "mb",
-      "curve": "gpu"
+      "curve": "mobo"
     },
     "7": {
       "sensor": "mb",
-      "curve": "cpu"
+      "curve": "mobo"
     }
   },
   "log": {

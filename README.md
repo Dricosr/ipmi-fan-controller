@@ -70,13 +70,13 @@ O que **funcionou**:
 
 A cada `sensor.interval` (default 3s):
 1. Lê os sensores via HTTP da web da BMC (+ GPU local via `nvidia-smi`).
-2. Calcula a duty de cada fan pela curva do sensor mapeado (`fanMapping`).
+2. Calcula a duty de cada fan pela curva do sensor mapeado (`fanMapping`) — 3 curvas: `cpu`, `gpu` e `mobo` (Placa-Mãe).
 3. Envia as 7 duties via IPMICFG `0x3a` (piso `globalMin=20%` — nunca `0x00`).
 4. Loga as duties aplicadas. Falha de leitura por 2 ticks → fans a 100% (seguro).
 
 ---
 
-## � Sessão única da BMC (anti-flood)
+## 🔐 Sessão única da BMC (anti-flood)
 
 A BMC **Megarac SP (AMI)** tem uma **tabela de sessões limitada**. Se o app criar sessões sem
 liberá-las, a tabela enche e a **web da BMC para de responder** (travamento). O app mantém
@@ -95,7 +95,7 @@ e sinais de flood (nº de logins, logouts com falha, `HTTP 503`, re-logins, leit
 
 ---
 
-## �📁 Estrutura do projeto
+## 📁 Estrutura do projeto
 
 ```
 ipmicfg/app
@@ -154,18 +154,18 @@ Depois, abra **http://127.0.0.1:3041** no navegador.
   "ipmi": { "dir": "C:\\Program Files\\ipmicfg\\ipmi_1.27.1\\Windows\\64bit" },
   "behavior": { "interval": 5, "globalMin": 20, "testDurationSec": 10 },
   "curves": {
-    "cpu": { "30": 0, "40": 10, "50": 25, "60": 70, "65": 100 },
-    "gpu": { "30": 25, "40": 40, "50": 60, "60": 80, "65": 100 },
-    "mobo": { "35": 0, "45": 20, "50": 40, "55": 60, "60": 80, "65": 100 }
+    "cpu": { "35": 0, "40": 10, "50": 25, "60": 70, "65": 100 },
+    "gpu": { "35": 0, "38": 10, "40": 20, "45": 40, "50": 60, "55": 70, "60": 80, "65": 100 },
+    "mobo": { "35": 0, "38": 20, "41": 40, "44": 60, "47": 80, "50": 100 }
   },
   "fanMapping": {
     "1": { "sensor": "cpu_bsp1", "curve": "cpu" },
-    "2": { "sensor": "mb", "curve": "cpu" },
-    "3": { "sensor": "mb", "curve": "cpu" },
+    "2": { "sensor": "mb", "curve": "mobo" },
+    "3": { "sensor": "mb", "curve": "mobo" },
     "4": { "sensor": "gpu", "curve": "gpu" },
-    "5": { "sensor": "mb", "curve": "cpu" },
-    "6": { "sensor": "mb", "curve": "gpu" },
-    "7": { "sensor": "mb", "curve": "cpu" }
+    "5": { "sensor": "mb", "curve": "mobo" },
+    "6": { "sensor": "mb", "curve": "mobo" },
+    "7": { "sensor": "mb", "curve": "mobo" }
   },
   "log": { "dir": "logs", "file": "fan_controller.log" }
 }

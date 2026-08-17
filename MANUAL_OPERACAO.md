@@ -11,7 +11,7 @@ controle via **IPMICFG raw**, rodando em **Node.js** com **web UI** local em `ht
 
 O app (`controller.js`) é um **processo único** que:
 1. Lê os sensores via **HTTP da web da BMC** (`/rpc/getallsensors.asp`, ~100-300ms) + GPU local (`nvidia-smi`).
-2. Calcula a duty de cada fan pela **curva** do sensor mapeado (`fanMapping`).
+2. Calcula a duty de cada fan pela **curva** do sensor mapeado (`fanMapping`) — 3 curvas: `cpu`, `gpu` e `mobo`.
 3. Aplica as 7 duties via `IPMICFG-Win.exe -raw 0x3a ...` (piso `globalMin=20%`).
 4. Serve a **web UI** (Dashboard, Mapping, Curvas, Configuração) e o **teste de fan** por porta.
 
@@ -50,6 +50,7 @@ web BMC (getallsensors) + nvidia-smi ─▶ sensores ─▶ curvas ─▶ duties
 | `remove_task.bat` | Remove a tarefa do logon |
 | `stop.bat` | Para o app e restaura o modo automático do BMC |
 | `test_fan.bat` | Testa a conexão do app (web BMC + sensores) |
+| `monitor_bmc.ps1` | Monitor de saúde + sinais de flood de sessões (rode sob demanda) |
 | `README.md` | Resumo rápido |
 | `logs\fan_controller.log` | Log do app (criado automaticamente) |
 
@@ -103,8 +104,8 @@ Abra **http://127.0.0.1:3041**:
 |--------|--------|
 | **Dashboard** | Temperaturas (GPU/CPU/MB) com fan atrelada e duty, tabela de fans (RPM/duty), voltagens, todos os sensores |
 | **Mapping** | Porta → sensor + curva, prévia ao vivo (% calculada) e botão **Test** por fan |
-| **Curvas** | Edita as curvas **CPU** e **GPU** (pontos temperatura → %) |
-| **Configuração** | Endereço/usuário/senha da BMC, intervalo de leitura, testar conexão |
+| **Curvas** | Edita as curvas **CPU**, **GPU** e **MOBO** (pontos temperatura → %) |
+| **Configuração** | Endereço/usuário/senha da BMC, intervalo de leitura, testar conexão e **Reiniciar BMC** (cold reset) |
 
 ### Endpoints da API
 | Endpoint | Descrição |
@@ -114,6 +115,7 @@ Abra **http://127.0.0.1:3041**:
 | `PUT /api/config` | Salva configuração (aplica na hora) |
 | `GET /api/test` | Testa conexão (GPU + CPU/MB via web BMC) |
 | `POST /api/fan/<slot>/test` | Acelera a fan do slot a 100% por `testDurationSec` e volta |
+| `POST /api/bmc/reset` | Cold reset da BMC (`IPMICFG -r`) — use quando a web da BMC travar |
 
 ---
 
@@ -128,17 +130,18 @@ Abra **http://127.0.0.1:3041**:
   "ipmi": { "dir": "C:\\Program Files\\ipmicfg\\ipmi_1.27.1\\Windows\\64bit" },
   "behavior": { "interval": 5, "globalMin": 20, "testDurationSec": 10 },
   "curves": {
-    "cpu": { "30": 0, "40": 10, "50": 25, "60": 70, "65": 100 },
-    "gpu": { "30": 25, "40": 40, "50": 60, "60": 80, "65": 100 }
+    "cpu": { "35": 0, "40": 10, "50": 25, "60": 70, "65": 100 },
+    "gpu": { "35": 0, "38": 10, "40": 20, "45": 40, "50": 60, "55": 70, "60": 80, "65": 100 },
+    "mobo": { "35": 0, "38": 20, "41": 40, "44": 60, "47": 80, "50": 100 }
   },
   "fanMapping": {
     "1": { "sensor": "cpu_bsp1", "curve": "cpu" },
-    "2": { "sensor": "mb", "curve": "cpu" },
-    "3": { "sensor": "mb", "curve": "cpu" },
+    "2": { "sensor": "mb", "curve": "mobo" },
+    "3": { "sensor": "mb", "curve": "mobo" },
     "4": { "sensor": "gpu", "curve": "gpu" },
-    "5": { "sensor": "mb", "curve": "cpu" },
-    "6": { "sensor": "mb", "curve": "gpu" },
-    "7": { "sensor": "mb", "curve": "cpu" }
+    "5": { "sensor": "mb", "curve": "mobo" },
+    "6": { "sensor": "mb", "curve": "mobo" },
+    "7": { "sensor": "mb", "curve": "mobo" }
   },
   "log": { "dir": "logs", "file": "fan_controller.log" }
 }
@@ -154,7 +157,7 @@ Abra **http://127.0.0.1:3041**:
 | `ipmi.dir` | Pasta do IPMICFG 1.27.1 | `...\ipmi_1.27.1\Windows\64bit` |
 | `behavior.globalMin` | Duty mínima (nunca `0x00` — quirk do BMC) | `20` |
 | `behavior.testDurationSec` | Duração do teste de fan (segundos) | `10` |
-| `curves.cpu` / `curves.gpu` | Curvas temperatura → velocidade (%) | ver acima |
+| `curves.cpu` / `curves.gpu` / `curves.mobo` | Curvas temperatura → velocidade (%) — CPU, GPU e Placa-Mãe | ver acima |
 | `fanMapping` | Porta → `{ sensor, curve }` (portas 1–7) | ver acima |
 | `log.dir` / `log.file` | Caminho do log | `logs` / `fan_controller.log` |
 
@@ -165,17 +168,17 @@ Abra **http://127.0.0.1:3041**:
 
 ## 8. Curvas de Temperatura
 
-Curvas atuais (100% a 65 °C):
-| Temperatura | CPU | GPU |
-|-------------|-----|-----|
-| < 30 °C | 0 % (piso 20%) | 25 % |
-| 30–39 °C | 10 % (piso 20%) | 40 % |
-| 40–49 °C | 25 % | 60 % |
-| 50–59 °C | 70 % | 80 % |
-| **≥ 60–65 °C** | **100 %** | **100 %** |
+As três curvas (edite na aba **Curvas** da web UI ou em `config.json`):
 
-> Toda duty calculada é limitada ao piso `globalMin` (20%). Edite na aba **Curvas** da web UI
-> (ou em `config.json`). O app usa o **maior ponto** cuja temperatura é ≤ à lida.
+| Curva | Pontos (temperatura → %) |
+|-------|--------------------------|
+| **CPU** | 35°→0% · 40°→10% · 50°→25% · 60°→70% · 65°→100% |
+| **GPU** | 35°→0% · 38°→10% · 40°→20% · 45°→40% · 50°→60% · 55°→70% · 60°→80% · 65°→100% |
+| **MOBO** (Placa-Mãe) | 35°→0% · 38°→20% · 41°→40% · 44°→60% · 47°→80% · 50°→100% |
+
+> A curva **MOBO** (sensor `mb`) é mais agressiva — 100% a 50 °C — para refrigerar os VRMs/PCH e o
+> gabinete. Toda duty é limitada ao piso `globalMin` (20%): abaixo do 1º ponto a fan fica em 20%.
+> O app usa o **maior ponto** cuja temperatura é ≤ à lida.
 
 ---
 
@@ -205,7 +208,8 @@ O log registra as duties aplicadas (ex.: `fans: CPU_FAN1=25% REAR_FAN1=20% ... F
 | Verificar a tarefa | `schtasks /query /tn "IPMI-FanController"` |
 
 > **Importante:** use `stop.bat` (mata o `controller.js` e restaura o modo automático do BMC).
-> O app também restaura o auto se encerrado com Ctrl+C/SIGTERM.
+> O app também restaura o auto e **faz logout da sessão da BMC** se encerrado com Ctrl+C/SIGTERM
+> (evita deixar sessão órfã, que contribuiria para o flood).
 
 ---
 
@@ -233,6 +237,8 @@ O log registra as duties aplicadas (ex.: `fans: CPU_FAN1=25% REAR_FAN1=20% ... F
 | Fan da P100 travada (~1800 RPM) | `globalMin` em `0` (envia `0x00`) | Manter `behavior.globalMin: 20` |
 | Modo ficou manual após morte do app | Processo morto à força | Rodar `stop.bat` |
 | PowerShell corrompe `-raw` | PowerShell altera a formatação | Não digitar `-raw` manualmente no PowerShell; usar o app |
+| Web da BMC travou (sem resposta) | Tabela de sessões cheia (flood) | Botão **Reiniciar BMC** (Configuração) ou `IPMICFG-Win.exe -r`; se o IPMI também morrer, desligar da tomada ~30s |
+| Muitos `login #N` no log / `HTTP 503` | Flood de sessões na BMC | Rodar `monitor_bmc.ps1`; o app mantém 1 sessão (logout com retry) |
 
 ---
 
