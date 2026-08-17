@@ -6,7 +6,7 @@ const WRITABLE = 7; // slots 1-7 controláveis; slot 8 (CPU_FAN2) = BMC auto
 const SENSOR_LABELS = { gpu: 'GPU (local)', cpu_bsp1: 'CPU BSP1 (BMC)', cpu_ap1: 'CPU AP1 (BMC)', mb: 'MB (BMC)' };
 
 let mapping = {};
-let curves = { cpu: {}, gpu: {} };
+let curves = { cpu: {}, gpu: {}, mobo: {} };
 let live = { gpu: null, temps: {} };
 
 function setMsg(txt, ok) { msg.textContent = txt; msg.className = 'msg ' + (ok === false ? 'bad' : ok === true ? 'good' : ''); }
@@ -44,7 +44,7 @@ function buildRows() {
     }
     const m = mapping[s] || { sensor: 'mb', curve: 'cpu' };
     const sensorSelect = Object.keys(SENSOR_LABELS).map(k => `<option value="${k}" ${k === m.sensor ? 'selected' : ''}>${SENSOR_LABELS[k]}</option>`).join('');
-    const curveSelect = `<option value="cpu" ${m.curve === 'cpu' ? 'selected' : ''}>CPU</option><option value="gpu" ${m.curve === 'gpu' ? 'selected' : ''}>GPU</option>`;
+    const curveSelect = `<option value="cpu" ${m.curve === 'cpu' ? 'selected' : ''}>CPU</option><option value="gpu" ${m.curve === 'gpu' ? 'selected' : ''}>GPU</option><option value="mobo" ${m.curve === 'mobo' ? 'selected' : ''}>MOBO</option>`;
     tr.innerHTML = `<td>${s}</td><td>${FAN_NAMES[s - 1]}</td>
       <td><select class="sensor">${sensorSelect}</select></td>
       <td><select class="curve">${curveSelect}</select></td>
@@ -69,7 +69,7 @@ async function load() {
       (await fetch('/api/state')).json()
     ]);
     mapping = c.fanMapping || {};
-    curves = c.curves || { cpu: {}, gpu: {} };
+    curves = c.curves || { cpu: {}, gpu: {}, mobo: {} };
     live.gpu = st.sensors.gpu;
     live.temps = st.sensors.temps || {};
     buildRows();

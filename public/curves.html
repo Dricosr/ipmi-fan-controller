@@ -38,6 +38,15 @@
       </table>
       <button type="button" id="addGpu" class="add">+ Adicionar ponto</button>
     </section>
+    <section class="card">
+      <h2>Curva MOBO <span class="dim">(Placa-Mãe / MB)</span></h2>
+      <svg id="chartMobo" class="chart" viewBox="0 0 320 170"></svg>
+      <table class="curve">
+        <thead><tr><th>Temp (°C)</th><th>% Fan</th><th></th></tr></thead>
+        <tbody id="rowsMobo"></tbody>
+      </table>
+      <button type="button" id="addMobo" class="add">+ Adicionar ponto</button>
+    </section>
   </div>
   <div class="row savebar">
     <button id="btnSave" class="primary">Salvar curvas</button>

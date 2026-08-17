@@ -436,7 +436,7 @@ function startServer() {
           if (nc.sensor && nc.sensor.interval !== undefined) sensorIntervalSec = Math.max(1, Math.min(60, parseInt(nc.sensor.interval, 10) || 2));
           if (nc.curves) {
             const clean = {};
-            for (const name of ['cpu', 'gpu']) {
+            for (const name of ['cpu', 'gpu', 'mobo']) {
               if (nc.curves[name] && typeof nc.curves[name] === 'object') {
                 clean[name] = {};
                 for (const [t, p] of Object.entries(nc.curves[name])) {
@@ -449,10 +449,11 @@ function startServer() {
           }
           if (nc.fanMapping && typeof nc.fanMapping === 'object') {
             const validSensors = ['gpu', 'cpu_bsp1', 'cpu_ap1', 'mb'];
+            const validCurves = ['cpu', 'gpu', 'mobo'];
             const cleanMap = {};
             for (let s = 1; s <= FAN_SLOTS; s++) {
               const m = nc.fanMapping[s];
-              if (m && validSensors.includes(m.sensor) && (m.curve === 'cpu' || m.curve === 'gpu')) cleanMap[s] = { sensor: m.sensor, curve: m.curve };
+              if (m && validSensors.includes(m.sensor) && validCurves.includes(m.curve)) cleanMap[s] = { sensor: m.sensor, curve: m.curve };
             }
             fanMapping = cleanMap;
           }
