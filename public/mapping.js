@@ -3,15 +3,19 @@ const $ = (s) => document.querySelector(s);
 const msg = $('#msg');
 const FAN_NAMES = ['CPU_FAN1','REAR_FAN1','REAR_FAN2','FRNT_FAN1','FRNT_FAN2','FRNT_FAN3','FRNT_FAN4','CPU_FAN2'];
 const WRITABLE = 7; // slots 1-7 controláveis; slot 8 (CPU_FAN2) = BMC auto
-const SENSOR_LABELS = { gpu: 'GPU (local)', cpu_bsp1: 'CPU BSP1 (BMC)', cpu_ap1: 'CPU AP1 (BMC)', mb: 'MB (BMC)' };
+const SENSOR_LABELS = { gpu0: 'GPU 0 (local)', gpu1: 'GPU 1 (local)', cpu_bsp1: 'CPU BSP1 (BMC)', cpu_ap1: 'CPU AP1 (BMC)', mb: 'MB (BMC)' };
 
 let mapping = {};
-let curves = { cpu: {}, gpu: {}, mobo: {} };
-let live = { gpu: null, temps: {} };
+let curves = { cpu: {}, gpu0: {}, gpu1: {}, mobo: {} };
+let live = { gpu0: null, gpu1: null, temps: {} };
 
 function setMsg(txt, ok) { msg.textContent = txt; msg.className = 'msg ' + (ok === false ? 'bad' : ok === true ? 'good' : ''); }
 
-function sensorVal(sensor) { return sensor === 'gpu' ? live.gpu : (live.temps[sensor] != null ? live.temps[sensor] : null); }
+function sensorVal(sensor) {
+  if (sensor === 'gpu0' || sensor === 'gpu') return live.gpu0;
+  if (sensor === 'gpu1') return live.gpu1;
+  return live.temps[sensor] != null ? live.temps[sensor] : null;
+}
 
 function curvePct(curve, temp) {
   if (temp == null) return null;
@@ -44,7 +48,7 @@ function buildRows() {
     }
     const m = mapping[s] || { sensor: 'mb', curve: 'cpu' };
     const sensorSelect = Object.keys(SENSOR_LABELS).map(k => `<option value="${k}" ${k === m.sensor ? 'selected' : ''}>${SENSOR_LABELS[k]}</option>`).join('');
-    const curveSelect = `<option value="cpu" ${m.curve === 'cpu' ? 'selected' : ''}>CPU</option><option value="gpu" ${m.curve === 'gpu' ? 'selected' : ''}>GPU</option><option value="mobo" ${m.curve === 'mobo' ? 'selected' : ''}>MOBO</option>`;
+    const curveSelect = `<option value="cpu" ${m.curve === 'cpu' ? 'selected' : ''}>CPU</option><option value="gpu0" ${(m.curve === 'gpu0' || m.curve === 'gpu') ? 'selected' : ''}>GPU 0</option><option value="gpu1" ${m.curve === 'gpu1' ? 'selected' : ''}>GPU 1</option><option value="mobo" ${m.curve === 'mobo' ? 'selected' : ''}>MOBO</option>`;
     tr.innerHTML = `<td>${s}</td><td>${FAN_NAMES[s - 1]}</td>
       <td><select class="sensor">${sensorSelect}</select></td>
       <td><select class="curve">${curveSelect}</select></td>
@@ -69,8 +73,9 @@ async function load() {
       (await fetch('/api/state')).json()
     ]);
     mapping = c.fanMapping || {};
-    curves = c.curves || { cpu: {}, gpu: {}, mobo: {} };
-    live.gpu = st.sensors.gpu;
+    curves = c.curves || { cpu: {}, gpu0: {}, gpu1: {}, mobo: {} };
+    live.gpu0 = st.sensors.gpu0 != null ? st.sensors.gpu0 : st.sensors.gpu;
+    live.gpu1 = st.sensors.gpu1;
     live.temps = st.sensors.temps || {};
     buildRows();
     $('#status').innerHTML = '<span class="dot green"></span> mapeamento carregado';
@@ -114,7 +119,8 @@ load();
 setInterval(async () => {
   try {
     const st = await (await fetch('/api/state')).json();
-    live.gpu = st.sensors.gpu;
+    live.gpu0 = st.sensors.gpu0 != null ? st.sensors.gpu0 : st.sensors.gpu;
+    live.gpu1 = st.sensors.gpu1;
     live.temps = st.sensors.temps || {};
     refreshLive();
   } catch (_) {}

@@ -1,7 +1,7 @@
 'use strict';
 const $ = (s) => document.querySelector(s);
 const msg = $('#msg');
-const KEYS = { cpu: { chart: 'chartCpu', rows: 'rowsCpu', add: 'addCpu' }, gpu: { chart: 'chartGpu', rows: 'rowsGpu', add: 'addGpu' }, mobo: { chart: 'chartMobo', rows: 'rowsMobo', add: 'addMobo' } };
+const KEYS = { cpu: { chart: 'chartCpu', rows: 'rowsCpu', add: 'addCpu' }, gpu0: { chart: 'chartGpu0', rows: 'rowsGpu0', add: 'addGpu0' }, gpu1: { chart: 'chartGpu1', rows: 'rowsGpu1', add: 'addGpu1' }, mobo: { chart: 'chartMobo', rows: 'rowsMobo', add: 'addMobo' } };
 
 function setMsg(txt, ok) { msg.textContent = txt; msg.className = 'msg ' + (ok === false ? 'bad' : ok === true ? 'good' : ''); }
 
@@ -68,15 +68,16 @@ async function load() {
     const d = await r.json();
     const curves = d.curves || {};
     renderRows('cpu', curves.cpu);
-    renderRows('gpu', curves.gpu);
+    renderRows('gpu0', curves.gpu0 || curves.gpu);
+    renderRows('gpu1', curves.gpu1);
     renderRows('mobo', curves.mobo);
     $('#status').innerHTML = '<span class="dot green"></span> curvas carregadas';
   } catch (e) { setMsg('Erro ao carregar curvas: ' + e.message, false); }
 }
 
 async function save() {
-  const curves = { cpu: {}, gpu: {}, mobo: {} };
-  for (const key of ['cpu', 'gpu', 'mobo']) {
+  const curves = { cpu: {}, gpu0: {}, gpu1: {}, mobo: {} };
+  for (const key of ['cpu', 'gpu0', 'gpu1', 'mobo']) {
     rowsFor(key).forEach(p => { curves[key][p.temp] = p.pct; });
   }
   try {
@@ -87,7 +88,8 @@ async function save() {
 }
 
 $('#addCpu').addEventListener('click', () => { addRow('cpu'); renderChart('cpu'); });
-$('#addGpu').addEventListener('click', () => { addRow('gpu'); renderChart('gpu'); });
+$('#addGpu0').addEventListener('click', () => { addRow('gpu0'); renderChart('gpu0'); });
+$('#addGpu1').addEventListener('click', () => { addRow('gpu1'); renderChart('gpu1'); });
 $('#addMobo').addEventListener('click', () => { addRow('mobo'); renderChart('mobo'); });
 $('#btnSave').addEventListener('click', save);
 load();

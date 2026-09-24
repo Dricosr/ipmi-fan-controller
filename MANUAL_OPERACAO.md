@@ -10,8 +10,8 @@ controle via **IPMICFG raw**, rodando em **Node.js** com **web UI** local em `ht
 ## 1. Visão Geral
 
 O app (`controller.js`) é um **processo único** que:
-1. Lê os sensores via **HTTP da web da BMC** (`/rpc/getallsensors.asp`, ~100-300ms) + GPU local (`nvidia-smi`).
-2. Calcula a duty de cada fan pela **curva** do sensor mapeado (`fanMapping`) — 3 curvas: `cpu`, `gpu` e `mobo`.
+1. Lê os sensores via **HTTP da web da BMC** (`/rpc/getallsensors.asp`, ~100-300ms) + GPUs locais (`nvidia-smi`, **todas** as GPUs).
+2. Calcula a duty de cada fan pela **curva** do sensor mapeado (`fanMapping`) — 4 curvas: `cpu`, `gpu0`, `gpu1` e `mobo`.
 3. Aplica as 7 duties via `IPMICFG-Win.exe -raw 0x3a ...` (piso `globalMin=20%`).
 4. Serve a **web UI** (Dashboard, Mapping, Curvas, Configuração) e o **teste de fan** por porta.
 
@@ -104,7 +104,7 @@ Abra **http://127.0.0.1:3041**:
 |--------|--------|
 | **Dashboard** | Temperaturas (GPU/CPU/MB) com fan atrelada e duty, tabela de fans (RPM/duty), voltagens, todos os sensores |
 | **Mapping** | Porta → sensor + curva, prévia ao vivo (% calculada) e botão **Test** por fan |
-| **Curvas** | Edita as curvas **CPU**, **GPU** e **MOBO** (pontos temperatura → %) |
+| **Curvas** | Edita as curvas **CPU**, **GPU 0**, **GPU 1** e **MOBO** (pontos temperatura → %) |
 | **Configuração** | Endereço/usuário/senha da BMC, intervalo de leitura, testar conexão e **Reiniciar BMC** (cold reset) |
 
 ### Endpoints da API
@@ -131,17 +131,18 @@ Abra **http://127.0.0.1:3041**:
   "behavior": { "interval": 5, "globalMin": 20, "testDurationSec": 10 },
   "curves": {
     "cpu": { "35": 0, "40": 10, "50": 25, "60": 70, "65": 100 },
-    "gpu": { "35": 0, "38": 10, "40": 20, "45": 40, "50": 60, "55": 70, "60": 80, "65": 100 },
+    "gpu0": { "35": 0, "37": 10, "39": 20, "43": 40, "46": 60, "50": 70, "55": 80, "60": 100 },
+    "gpu1": { "35": 0, "37": 10, "39": 20, "43": 40, "46": 60, "50": 70, "55": 80, "60": 100 },
     "mobo": { "35": 0, "38": 20, "41": 40, "44": 60, "47": 80, "50": 100 }
   },
   "fanMapping": {
     "1": { "sensor": "cpu_bsp1", "curve": "cpu" },
     "2": { "sensor": "mb", "curve": "mobo" },
     "3": { "sensor": "mb", "curve": "mobo" },
-    "4": { "sensor": "gpu", "curve": "gpu" },
+    "4": { "sensor": "gpu0", "curve": "gpu0" },
     "5": { "sensor": "mb", "curve": "mobo" },
     "6": { "sensor": "mb", "curve": "mobo" },
-    "7": { "sensor": "mb", "curve": "mobo" }
+    "7": { "sensor": "gpu1", "curve": "gpu1" }
   },
   "log": { "dir": "logs", "file": "fan_controller.log" }
 }
@@ -157,7 +158,7 @@ Abra **http://127.0.0.1:3041**:
 | `ipmi.dir` | Pasta do IPMICFG 1.27.1 | `...\ipmi_1.27.1\Windows\64bit` |
 | `behavior.globalMin` | Duty mínima (nunca `0x00` — quirk do BMC) | `20` |
 | `behavior.testDurationSec` | Duração do teste de fan (segundos) | `10` |
-| `curves.cpu` / `curves.gpu` / `curves.mobo` | Curvas temperatura → velocidade (%) — CPU, GPU e Placa-Mãe | ver acima |
+| `curves.cpu` / `curves.gpu0` / `curves.gpu1` / `curves.mobo` | Curvas temperatura → velocidade (%) — CPU, GPU 0, GPU 1 e Placa-Mãe | ver acima |
 | `fanMapping` | Porta → `{ sensor, curve }` (portas 1–7) | ver acima |
 | `log.dir` / `log.file` | Caminho do log | `logs` / `fan_controller.log` |
 
@@ -168,14 +169,16 @@ Abra **http://127.0.0.1:3041**:
 
 ## 8. Curvas de Temperatura
 
-As três curvas (edite na aba **Curvas** da web UI ou em `config.json`):
+As **quatro** curvas (edite na aba **Curvas** da web UI ou em `config.json`):
 
 | Curva | Pontos (temperatura → %) |
 |-------|--------------------------|
 | **CPU** | 35°→0% · 40°→10% · 50°→25% · 60°→70% · 65°→100% |
-| **GPU** | 35°→0% · 38°→10% · 40°→20% · 45°→40% · 50°→60% · 55°→70% · 60°→80% · 65°→100% |
+| **GPU 0** (P100 #1) | 35°→0% · 37°→10% · 39°→20% · 43°→40% · 46°→60% · 50°→70% · 55°→80% · 60°→100% |
+| **GPU 1** (P100 #2) | 35°→0% · 37°→10% · 39°→20% · 43°→40% · 46°→60% · 50°→70% · 55°→80% · 60°→100% |
 | **MOBO** (Placa-Mãe) | 35°→0% · 38°→20% · 41°→40% · 44°→60% · 47°→80% · 50°→100% |
 
+> Cada P100 tem a sua própria curva (`gpu0`/`gpu1`) e a sua própria fan — controle **independente**.
 > A curva **MOBO** (sensor `mb`) é mais agressiva — 100% a 50 °C — para refrigerar os VRMs/PCH e o
 > gabinete. Toda duty é limitada ao piso `globalMin` (20%): abaixo do 1º ponto a fan fica em 20%.
 > O app usa o **maior ponto** cuja temperatura é ≤ à lida.
@@ -259,8 +262,9 @@ O app usa os nomes **físicos** (silkscreen) no controle/UI:
 | 7 | FRNT_FAN4 | FRNT_FAN3 | ✅ |
 | 8 | CPU_FAN2 | FRNT_FAN4 | ❌ (auto da BMC) |
 
-> A ventoinha adaptada da **Tesla P100** está na **FRNT_FAN1 = slot 4** (curva GPU). A 8ª fan
-> (**CPU_FAN2**) não é alcançada pelo comando `0x3a` e permanece sob controle automático da BMC.
+> As ventoinhas das **Tesla P100**: **P100 #1 → FRNT_FAN1 (slot 4, curva GPU 0)** e
+> **P100 #2 → FRNT_FAN4 (slot 7, curva GPU 1)**. A 8ª fan (**CPU_FAN2**) não é alcançada pelo
+> comando `0x3a` e permanece sob controle automático da BMC.
 
 ---
 

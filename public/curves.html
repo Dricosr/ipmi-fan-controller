@@ -30,13 +30,22 @@
       <button type="button" id="addCpu" class="add">+ Adicionar ponto</button>
     </section>
     <section class="card">
-      <h2>Curva GPU <span class="dim">(FRNT_FAN1 / P100)</span></h2>
-      <svg id="chartGpu" class="chart" viewBox="0 0 320 170"></svg>
+      <h2>Curva GPU 0 <span class="dim">(FRNT_FAN1 / P100 #1)</span></h2>
+      <svg id="chartGpu0" class="chart" viewBox="0 0 320 170"></svg>
       <table class="curve">
         <thead><tr><th>Temp (°C)</th><th>% Fan</th><th></th></tr></thead>
-        <tbody id="rowsGpu"></tbody>
+        <tbody id="rowsGpu0"></tbody>
       </table>
-      <button type="button" id="addGpu" class="add">+ Adicionar ponto</button>
+      <button type="button" id="addGpu0" class="add">+ Adicionar ponto</button>
+    </section>
+    <section class="card">
+      <h2>Curva GPU 1 <span class="dim">(FRNT_FAN4 / P100 #2)</span></h2>
+      <svg id="chartGpu1" class="chart" viewBox="0 0 320 170"></svg>
+      <table class="curve">
+        <thead><tr><th>Temp (°C)</th><th>% Fan</th><th></th></tr></thead>
+        <tbody id="rowsGpu1"></tbody>
+      </table>
+      <button type="button" id="addGpu1" class="add">+ Adicionar ponto</button>
     </section>
     <section class="card">
       <h2>Curva MOBO <span class="dim">(Placa-Mãe / MB)</span></h2>

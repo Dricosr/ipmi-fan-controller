@@ -50,9 +50,9 @@ function render(d) {
   // Temperaturas (cards)
   const temps = $('#temps');
   temps.innerHTML = '';
-  const tempDefs = [['gpu', 'GPU'], ['cpu_bsp1', 'CPU BSP1'], ['cpu_ap1', 'CPU AP1'], ['mb', 'Placa-Mãe']];
-  for (const [key, label] of tempDefs) {
-    const val = key === 'gpu' ? (s && s.gpu) : (s && s.temps[key]);
+  const tempDefs = [['gpu0', 'GPU 0', 'gpu'], ['gpu1', 'GPU 1', 'gpu'], ['cpu_bsp1', 'CPU BSP1'], ['cpu_ap1', 'CPU AP1'], ['mb', 'Placa-Mãe']];
+  for (const [key, label, kind] of tempDefs) {
+    const val = kind === 'gpu' ? (s && s[key]) : (s && s.temps ? s.temps[key] : null);
     const c = el('div', 'card temp');
     const att = attachedInfo(d, key);
     let sub = 'fan atrelada: —';
@@ -62,6 +62,8 @@ function render(d) {
       sub = `fans atreladas (${att.length}): ${att.map(a => a.pct).join('/')}%`;
       title = ` title="${att.map(a => `${a.name} ${a.pct}%`).join(' · ')}"`;
     }
+    const g = (kind === 'gpu' && s && Array.isArray(s.gpus)) ? s.gpus.find(x => x.index === parseInt(key.slice(3), 10)) : null;
+    if (g && g.util != null) sub += ` · util ${g.util}%`;
     c.innerHTML = `<h3>${label}</h3><div class="big">${val == null ? '—' : val + '°C'}</div>
       <div class="sub"${title}>${sub}</div>`;
     temps.appendChild(c);

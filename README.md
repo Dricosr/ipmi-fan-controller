@@ -18,8 +18,9 @@ Para o nosso servidor adaptamos uma **HA 8020 H1 2SBZ** (80 mm, 12 V, PWM) no co
 na porta **FRNT_FAN1** da placa.
 
 A placa **ASRock EP2C602** **não controla a velocidade dessa fan pelos recursos nativos** da BIOS e
-não lê a temperatura da GPU. Este app lê **todos** os sensores (GPU via `nvidia-smi`, CPU/MB via a
-web da BMC) e controla **todas as fans** por curvas de temperatura, via **IPMI raw** no BMC.
+não lê a temperatura da GPU. Este app lê **todos** os sensores (GPUs via `nvidia-smi` — suporta as
+**duas P100**, CPU/MB via a web da BMC) e controla **todas as fans** por curvas de temperatura, via
+**IPMI raw** no BMC.
 
 > **Resultado:** fans silenciosas em idle e 100% quando necessário, com **web UI** de monitoramento
 > (Dashboard, Mapping, Curvas, Configuração), **teste de fan** por porta e **reinício da BMC**.
@@ -49,7 +50,7 @@ O que **funcionou**:
 | Camada | Tecnologia | Por quê |
 |--------|------------|---------|
 | **Linguagem** | **Node.js 24 LTS** | `spawn` passa args como array; zero deps |
-| **Leitura de sensores** | HTTP da **web da BMC** (`getallsensors.asp`) + `nvidia-smi` (GPU) | ~100-300ms por leitura |
+| **Leitura de sensores** | HTTP da **web da BMC** (`getallsensors.asp`) + `nvidia-smi` (todas as GPUs) | ~100-300ms por leitura |
 | **Controle das fans** | `IPMICFG-Win.exe` **1.27.1** via `-raw 0x3a ...` ([download](https://www.supermicro.com/wdl/utility/IPMICFG/Previous%20Releases/)) | Única forma de acessar o BMC ASRock |
 | **Web UI** | Node `http` puro (sem deps) | Dashboard/Mapping/Curvas/Config em `localhost:3041` |
 | **Inicialização no logon** | **Task Scheduler** + `run_hidden.vbs` | Roda oculto a cada logon |
@@ -69,8 +70,8 @@ O que **funcionou**:
 ```
 
 A cada `sensor.interval` (default 3s):
-1. Lê os sensores via HTTP da web da BMC (+ GPU local via `nvidia-smi`).
-2. Calcula a duty de cada fan pela curva do sensor mapeado (`fanMapping`) — 3 curvas: `cpu`, `gpu` e `mobo` (Placa-Mãe).
+1. Lê os sensores via HTTP da web da BMC (+ GPUs locais via `nvidia-smi`, index 0..N).
+2. Calcula a duty de cada fan pela curva do sensor mapeado (`fanMapping`) — 4 curvas: `cpu`, `gpu0`, `gpu1` e `mobo` (Placa-Mãe).
 3. Envia as 7 duties via IPMICFG `0x3a` (piso `globalMin=20%` — nunca `0x00`).
 4. Loga as duties aplicadas. Falha de leitura por 2 ticks → fans a 100% (seguro).
 
@@ -155,17 +156,18 @@ Depois, abra **http://127.0.0.1:3041** no navegador.
   "behavior": { "interval": 5, "globalMin": 20, "testDurationSec": 10 },
   "curves": {
     "cpu": { "35": 0, "40": 10, "50": 25, "60": 70, "65": 100 },
-    "gpu": { "35": 0, "38": 10, "40": 20, "45": 40, "50": 60, "55": 70, "60": 80, "65": 100 },
+    "gpu0": { "35": 0, "37": 10, "39": 20, "43": 40, "46": 60, "50": 70, "55": 80, "60": 100 },
+    "gpu1": { "35": 0, "37": 10, "39": 20, "43": 40, "46": 60, "50": 70, "55": 80, "60": 100 },
     "mobo": { "35": 0, "38": 20, "41": 40, "44": 60, "47": 80, "50": 100 }
   },
   "fanMapping": {
     "1": { "sensor": "cpu_bsp1", "curve": "cpu" },
     "2": { "sensor": "mb", "curve": "mobo" },
     "3": { "sensor": "mb", "curve": "mobo" },
-    "4": { "sensor": "gpu", "curve": "gpu" },
+    "4": { "sensor": "gpu0", "curve": "gpu0" },
     "5": { "sensor": "mb", "curve": "mobo" },
     "6": { "sensor": "mb", "curve": "mobo" },
-    "7": { "sensor": "mb", "curve": "mobo" }
+    "7": { "sensor": "gpu1", "curve": "gpu1" }
   },
   "log": { "dir": "logs", "file": "fan_controller.log" }
 }
@@ -176,8 +178,8 @@ Depois, abra **http://127.0.0.1:3041** no navegador.
 >
 > ⚠️ **Nomes físicos vs BMC:** a BMC nomeia os slots de forma deslocada. O `controller.js` usa os
 > nomes **físicos** (silkscreen) no controle/UI (`fanNames`) e os nomes da BMC só para casar a leitura
-> de RPM. A fan da GPU (P100) está na **FRNT_FAN1 = slot 4**. A 8ª fan (**CPU_FAN2**) não é
-> controlável via `0x3a` (fica em auto da BMC).
+> de RPM. Fans das GPUs: **P100 #1 → FRNT_FAN1 (slot 4)** e **P100 #2 → FRNT_FAN4 (slot 7)**. A 8ª fan
+> (**CPU_FAN2**) não é controlável via `0x3a` (fica em auto da BMC).
 
 ---
 

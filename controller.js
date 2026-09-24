@@ -95,15 +95,22 @@ function runCmd(file, args, opts = {}) {
   });
 }
 
-async function getGpuTemp() {
+// Lê TODAS as GPUs (index, temperatura, utilização) — suporta múltiplas P100.
+async function getGpuTemps() {
   const candidates = ['nvidia-smi', 'C:\\Windows\\System32\\nvidia-smi.exe',
                       'C:\\Program Files\\NVIDIA Corporation\\NVSMI\\nvidia-smi.exe'];
   for (const c of candidates) {
-    const r = await runCmd(c, ['--query-gpu=temperature.gpu', '--format=csv,noheader,nounits']);
-    const m = r.out.match(/\d+/);
-    if (m) { const t = parseInt(m[0], 10); if (t >= 0 && t <= 200) return t; }
+    const r = await runCmd(c, ['--query-gpu=index,temperature.gpu,utilization.gpu', '--format=csv,noheader,nounits']);
+    if (r.code !== 0 || !r.out.trim()) continue;
+    const gpus = [];
+    for (const line of r.out.trim().split(/\r?\n/)) {
+      const parts = line.split(',').map(s => s.trim());
+      const idx = parseInt(parts[0], 10), temp = parseInt(parts[1], 10), util = parseInt(parts[2], 10);
+      if (!isNaN(idx) && !isNaN(temp) && temp >= 0 && temp <= 200) gpus.push({ index: idx, temp, util: isNaN(util) ? null : util });
+    }
+    if (gpus.length) { gpus.sort((a, b) => a.index - b.index); return gpus; }
   }
-  return null;
+  return [];
 }
 
 async function readFanStatus() {
@@ -241,7 +248,7 @@ function parseGetAllSensors(body) {
 
 async function readSensorsFast() {
   const t0 = Date.now();
-  const out = { ok: true, gpu: null, temps: {}, fans: [], volts: {}, all: [], reason: null };
+  const out = { ok: true, gpu: null, gpu0: null, gpu1: null, gpus: [], temps: {}, fans: [], volts: {}, all: [], reason: null };
   if (!BMC.address) { out.ok = false; out.reason = 'sem endereço BMC configurado'; return out; }
   // Garante sessão (login inicial ou renovação após expirar/limpar)
   if (!bmcSessionCookie && !(await bmcLogin())) { out.ok = false; out.reason = 'login HTTP da BMC falhou'; return out; }
@@ -267,7 +274,11 @@ async function readSensorsFast() {
   if (!p.all.length) { out.ok = false; out.reason = 'getallsensors sem dados'; return out; }
   lastLoginOk = true; // leitura com sessão válida
   out.temps = p.temps; out.fans = p.fans; out.volts = p.volts; out.all = p.all;
-  out.gpu = await getGpuTemp();
+  const gpus = await getGpuTemps();
+  out.gpus = gpus;
+  out.gpu0 = gpus.length > 0 ? gpus[0].temp : null;
+  out.gpu1 = gpus.length > 1 ? gpus[1].temp : null;
+  out.gpu = out.gpu0; // compat (legado)
   const dt = Date.now() - t0;
   if (dt > 2000) log('BMC: leitura lenta (' + dt + 'ms)');
   return out;
@@ -299,7 +310,11 @@ async function detectMode() {
 
 /* ---------------- Controle (mapping + curvas) ---------------- */
 
-function sensorVal(sensor) { return sensor === 'gpu' ? latestSensors.gpu : latestSensors.temps[sensor]; }
+function sensorVal(sensor) {
+  if (sensor === 'gpu0' || sensor === 'gpu') return latestSensors.gpu0 != null ? latestSensors.gpu0 : latestSensors.gpu;
+  if (sensor === 'gpu1') return latestSensors.gpu1;
+  return latestSensors.temps[sensor];
+}
 
 function curvePct(curve, temp) {
   if (temp == null) return null;
@@ -436,7 +451,7 @@ function startServer() {
           if (nc.sensor && nc.sensor.interval !== undefined) sensorIntervalSec = Math.max(1, Math.min(60, parseInt(nc.sensor.interval, 10) || 2));
           if (nc.curves) {
             const clean = {};
-            for (const name of ['cpu', 'gpu', 'mobo']) {
+            for (const name of ['cpu', 'gpu0', 'gpu1', 'gpu', 'mobo']) {
               if (nc.curves[name] && typeof nc.curves[name] === 'object') {
                 clean[name] = {};
                 for (const [t, p] of Object.entries(nc.curves[name])) {
@@ -448,8 +463,8 @@ function startServer() {
             curves = clean;
           }
           if (nc.fanMapping && typeof nc.fanMapping === 'object') {
-            const validSensors = ['gpu', 'cpu_bsp1', 'cpu_ap1', 'mb'];
-            const validCurves = ['cpu', 'gpu', 'mobo'];
+            const validSensors = ['gpu0', 'gpu1', 'gpu', 'cpu_bsp1', 'cpu_ap1', 'mb'];
+            const validCurves = ['cpu', 'gpu0', 'gpu1', 'gpu', 'mobo'];
             const cleanMap = {};
             for (let s = 1; s <= FAN_SLOTS; s++) {
               const m = nc.fanMapping[s];
@@ -472,7 +487,7 @@ function startServer() {
       (async () => {
         let s = null;
         for (let i = 0; i < 3; i++) { s = await readSensorsFast(); if (s && s.ok) break; await new Promise(r => setTimeout(r, 400)); }
-        send({ ok: !!(s && s.ok), gpu: s && s.gpu, cpu: s && s.temps ? Math.max(s.temps.cpu_bsp1 || 0, s.temps.cpu_ap1 || 0) : null, cpu_bsp1: s && s.temps && s.temps.cpu_bsp1, cpu_ap1: s && s.temps && s.temps.cpu_ap1, mb: s && s.temps && s.temps.mb, mode: 'http' });
+          send({ ok: !!(s && s.ok), gpu: s && s.gpu, gpu0: s && s.gpu0, gpu1: s && s.gpu1, gpus: (s && s.gpus) || [], cpu: s && s.temps ? Math.max(s.temps.cpu_bsp1 || 0, s.temps.cpu_ap1 || 0) : null, cpu_bsp1: s && s.temps && s.temps.cpu_bsp1, cpu_ap1: s && s.temps && s.temps.cpu_ap1, mb: s && s.temps && s.temps.mb, mode: 'http' });
       })().catch(e => send({ ok: false, error: String(e && e.message || e) }));
       return;
     }
