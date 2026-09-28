@@ -130,7 +130,7 @@ Abra **http://127.0.0.1:3041**:
   "ipmi": { "dir": "C:\\Program Files\\ipmicfg\\ipmi_1.27.1\\Windows\\64bit" },
   "behavior": { "interval": 5, "globalMin": 20, "testDurationSec": 10 },
   "curves": {
-    "cpu": { "35": 0, "40": 10, "50": 25, "60": 70, "65": 100 },
+    "cpu": { "35": 0, "40": 10, "50": 40, "55": 70, "60": 100 },
     "gpu0": { "35": 0, "37": 10, "39": 20, "43": 40, "46": 60, "50": 70, "55": 80, "60": 100 },
     "gpu1": { "35": 0, "37": 10, "39": 20, "43": 40, "46": 60, "50": 70, "55": 80, "60": 100 },
     "mobo": { "35": 0, "38": 20, "41": 40, "44": 60, "47": 80, "50": 100 }
@@ -141,8 +141,8 @@ Abra **http://127.0.0.1:3041**:
     "3": { "sensor": "mb", "curve": "mobo" },
     "4": { "sensor": "gpu0", "curve": "gpu0" },
     "5": { "sensor": "mb", "curve": "mobo" },
-    "6": { "sensor": "mb", "curve": "mobo" },
-    "7": { "sensor": "gpu1", "curve": "gpu1" }
+    "6": { "sensor": "gpu1", "curve": "gpu1" },
+    "7": { "sensor": "mb", "curve": "mobo" }
   },
   "log": { "dir": "logs", "file": "fan_controller.log" }
 }
@@ -173,7 +173,7 @@ As **quatro** curvas (edite na aba **Curvas** da web UI ou em `config.json`):
 
 | Curva | Pontos (temperatura → %) |
 |-------|--------------------------|
-| **CPU** | 35°→0% · 40°→10% · 50°→25% · 60°→70% · 65°→100% |
+| **CPU** | 35°→0% · 40°→10% · 50°→40% · 55°→70% · 60°→100% |
 | **GPU 0** (P100 #1) | 35°→0% · 37°→10% · 39°→20% · 43°→40% · 46°→60% · 50°→70% · 55°→80% · 60°→100% |
 | **GPU 1** (P100 #2) | 35°→0% · 37°→10% · 39°→20% · 43°→40% · 46°→60% · 50°→70% · 55°→80% · 60°→100% |
 | **MOBO** (Placa-Mãe) | 35°→0% · 38°→20% · 41°→40% · 44°→60% · 47°→80% · 50°→100% |
@@ -263,7 +263,7 @@ O app usa os nomes **físicos** (silkscreen) no controle/UI:
 | 8 | CPU_FAN2 | FRNT_FAN4 | ❌ (auto da BMC) |
 
 > As ventoinhas das **Tesla P100**: **P100 #1 → FRNT_FAN1 (slot 4, curva GPU 0)** e
-> **P100 #2 → FRNT_FAN4 (slot 7, curva GPU 1)**. A 8ª fan (**CPU_FAN2**) não é alcançada pelo
+> **P100 #2 → FRNT_FAN3 (slot 6, curva GPU 1)**. A 8ª fan (**CPU_FAN2**) não é alcançada pelo
 > comando `0x3a` e permanece sob controle automático da BMC.
 
 ---

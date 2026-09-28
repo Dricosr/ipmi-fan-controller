@@ -155,7 +155,7 @@ Depois, abra **http://127.0.0.1:3041** no navegador.
   "ipmi": { "dir": "C:\\Program Files\\ipmicfg\\ipmi_1.27.1\\Windows\\64bit" },
   "behavior": { "interval": 5, "globalMin": 20, "testDurationSec": 10 },
   "curves": {
-    "cpu": { "35": 0, "40": 10, "50": 25, "60": 70, "65": 100 },
+    "cpu": { "35": 0, "40": 10, "50": 40, "55": 70, "60": 100 },
     "gpu0": { "35": 0, "37": 10, "39": 20, "43": 40, "46": 60, "50": 70, "55": 80, "60": 100 },
     "gpu1": { "35": 0, "37": 10, "39": 20, "43": 40, "46": 60, "50": 70, "55": 80, "60": 100 },
     "mobo": { "35": 0, "38": 20, "41": 40, "44": 60, "47": 80, "50": 100 }
@@ -166,8 +166,8 @@ Depois, abra **http://127.0.0.1:3041** no navegador.
     "3": { "sensor": "mb", "curve": "mobo" },
     "4": { "sensor": "gpu0", "curve": "gpu0" },
     "5": { "sensor": "mb", "curve": "mobo" },
-    "6": { "sensor": "mb", "curve": "mobo" },
-    "7": { "sensor": "gpu1", "curve": "gpu1" }
+    "6": { "sensor": "gpu1", "curve": "gpu1" },
+    "7": { "sensor": "mb", "curve": "mobo" }
   },
   "log": { "dir": "logs", "file": "fan_controller.log" }
 }
@@ -178,7 +178,7 @@ Depois, abra **http://127.0.0.1:3041** no navegador.
 >
 > ⚠️ **Nomes físicos vs BMC:** a BMC nomeia os slots de forma deslocada. O `controller.js` usa os
 > nomes **físicos** (silkscreen) no controle/UI (`fanNames`) e os nomes da BMC só para casar a leitura
-> de RPM. Fans das GPUs: **P100 #1 → FRNT_FAN1 (slot 4)** e **P100 #2 → FRNT_FAN4 (slot 7)**. A 8ª fan
+> de RPM. Fans das GPUs: **P100 #1 → FRNT_FAN1 (slot 4)** e **P100 #2 → FRNT_FAN3 (slot 6)**. A 8ª fan
 > (**CPU_FAN2**) não é controlável via `0x3a` (fica em auto da BMC).
 
 ---

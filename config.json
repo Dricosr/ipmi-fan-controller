@@ -103,12 +103,12 @@
       "curve": "mobo"
     },
     "6": {
-      "sensor": "mb",
-      "curve": "mobo"
-    },
-    "7": {
       "sensor": "gpu1",
       "curve": "gpu1"
+    },
+    "7": {
+      "sensor": "mb",
+      "curve": "mobo"
     }
   },
   "log": {
